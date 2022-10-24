@@ -1,0 +1,21 @@
+{
+    "epoch": 3.0,
+    "epoch_mm": 3.0,
+    "eval_accuracy": 0.8188487009679063,
+    "eval_accuracy_mm": 0.8246541903986981,
+    "eval_loss": 0.4971478283405304,
+    "eval_loss_mm": 0.47608405351638794,
+    "eval_runtime": 81.119,
+    "eval_runtime_mm": 81.0367,
+    "eval_samples": 9815,
+    "eval_samples_mm": 9832,
+    "eval_samples_per_second": 120.995,
+    "eval_samples_per_second_mm": 121.328,
+    "eval_steps_per_second": 120.995,
+    "eval_steps_per_second_mm": 121.328,
+    "size_of": 510351408,
+    "used_cpu": 0.428515625,
+    "used_cpumem": 3588,
+    "used_gpu": 38.0,
+    "used_gpumem": 15473.4375
+}

@@ -1,0 +1,14 @@
+{
+    "epoch": 1.0,
+    "eval_loss": 0.5576468110084534,
+    "eval_matthews_correlation": 0.2445258947660564,
+    "eval_runtime": 7.8912,
+    "eval_samples": 1043,
+    "eval_samples_per_second": 132.173,
+    "eval_steps_per_second": 132.173,
+    "size_of": 357684232,
+    "used_cpu": 0.428515625,
+    "used_cpumem": 3131,
+    "used_gpu": 36.0,
+    "used_gpumem": 8317.4375
+}
