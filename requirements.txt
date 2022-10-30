@@ -8,4 +8,4 @@ protobuf
 torch >= 1.3
 evaluate
 psutil
-pynvml
+py3nvml

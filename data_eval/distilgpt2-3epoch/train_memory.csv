@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,used_cpu,used_cpumem,used_gpu,used_gpumem
+distilgpt2,1,128,0.3898,2266.0000,9.0000,2323.4375
+distilgpt2,16,128,0.4289,2266.0000,21.0000,4197.4375
+distilgpt2,32,128,0.4285,2266.0000,68.0000,6653.4375

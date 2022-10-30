@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,used_cpu,used_cpumem,used_gpu,used_gpumem
+distilbert-base-uncased,1,128,0.3898,2270.0000,9.0000,1609.4375
+distilbert-base-uncased,16,128,0.4289,2270.0000,6.0000,1945.4375
+distilbert-base-uncased,32,128,0.4289,2270.0000,8.0000,2287.4375

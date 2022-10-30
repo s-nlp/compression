@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,result
+distilgpt2,1,128,0.0281
+distilgpt2,16,128,0.0728
+distilgpt2,32,128,0.1399
