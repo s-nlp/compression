@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,used_cpu,used_cpumem,used_gpu,used_gpumem
+pruned_rnd_50_bert-base-uncased,1,128,0.7719,2269.0000,6.0000,1413.0000
+pruned_rnd_50_bert-base-uncased,16,128,0.7727,2269.0000,6.5000,1971.0000
+pruned_rnd_50_bert-base-uncased,32,128,0.7738,2269.0000,7.0000,2553.0000

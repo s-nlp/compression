@@ -17,8 +17,8 @@
     Benchmarking the library on inference and training in PyTorch.
 """
 
-
-from monitor_colab import Monitor
+from exps.models import MODEL_NAMES
+from monitor import Monitor
 
 import timeit
 from typing import Callable, Optional
@@ -92,10 +92,17 @@ class PyTorchBenchmark(Benchmark):
         )
         if not self.args.only_pretrain_model and has_model_class_in_config:
             try:
+
                 model_class = config.architectures[0]
                 transformers_module = __import__("transformers", fromlist=[model_class])
                 model_cls = getattr(transformers_module, model_class)
-                model = model_cls(config)
+                if not self.args.exp_name in ['none', None]:
+                    def_class = MODEL_NAMES[self.args.exp_name]
+                    class_module = __import__("exps.models", fromlist=[def_class])
+                    model_def = getattr(class_module, def_class)
+                    model = model_def(model_cls(config))
+                else:
+                    model = model_cls(config)
             except ImportError:
                 raise ImportError(
                     f"{model_class} does not exist. If you just want to test the pretrained model, you might want to"
@@ -148,10 +155,18 @@ class PyTorchBenchmark(Benchmark):
         )
         if not self.args.only_pretrain_model and has_model_class_in_config:
             try:
+
                 model_class = config.architectures[0]
                 transformers_module = __import__("transformers", fromlist=[model_class])
                 model_cls = getattr(transformers_module, model_class)
-                model = model_cls(config)
+
+                if not self.args.exp_name in ['none', None]:
+                    def_class = MODEL_NAMES[self.args.exp_name]
+                    class_module = __import__("exps.models", fromlist=[def_class])
+                    model_def = getattr(class_module, def_class)
+                    model = model_def(model_cls(config))
+                else:
+                    model = model_cls(config)
             except ImportError:
                 raise ImportError(
                     f"{model_class} does not exist. If you just want to test the pretrained model, you might want to"
@@ -254,7 +269,13 @@ class PyTorchBenchmark(Benchmark):
                     nvml.nvmlInit()
                     stat_monitor = Monitor()
                     stat_monitor.start_monitor()
-                    func()
+                    #for i in range(5):
+                    #    func()
+                    timeit.repeat(
+                        func,
+                        repeat=1,
+                        number=5,
+                                 )
                     stat_monitor.stop_monitor()
                     #memory = stat_monitor.get_stats()
                     memory = stat_monitor.stats
@@ -265,11 +286,13 @@ class PyTorchBenchmark(Benchmark):
                     #memory_bytes = measure_peak_memory_cpu(func)
                     #memory_cpu = Memory(memory_bytes) if isinstance(memory_bytes, int) else memory_bytes
 
-                    handle = nvml.nvmlDeviceGetHandleByIndex(self.args.device_idx)
-                    meminfo = nvml.nvmlDeviceGetMemoryInfo(handle)
-                    max_bytes_in_use = meminfo.used 
-                    memory_gpu = max_bytes_in_use / 1024 / 1024 #Memory(max_bytes_in_use)
-                    #memory[3] = memory_gpu
+                    #to working with colab
+                    if memory[3] == 0:
+                        handle = nvml.nvmlDeviceGetHandleByIndex(self.args.device_idx)
+                        meminfo = nvml.nvmlDeviceGetMemoryInfo(handle)
+                        max_bytes_in_use = meminfo.used 
+                        memory_gpu = max_bytes_in_use / 1024 / 1024 #Memory(max_bytes_in_use)
+                        memory[3] = memory_gpu
                     # shutdown nvml
                     nvml.nvmlShutdown()
                     

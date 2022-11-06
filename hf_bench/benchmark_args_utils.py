@@ -49,7 +49,10 @@ class BenchmarkArguments:
             )
         },
     )
-
+    exp_name: str = field(
+        default='none',
+        metadata={"help": "The name of the exp to train on: "}
+    )
     batch_sizes: List[int] = list_field(
         default=[8], metadata={"help": "List of batch sizes for which memory and time performance will be evaluated"}
     )

@@ -18,6 +18,7 @@
 
 from hf_bench.benchmark import PyTorchBenchmark
 from hf_bench.benchmark_args import PyTorchBenchmarkArguments
+from exps.models import MODEL_NAMES
 
 import argparse
 import logging
@@ -63,7 +64,6 @@ from torch.utils.data import DataLoader, SequentialSampler, Subset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
-from monitor_colab import Monitor
 from bench import GlueBench
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -231,6 +231,10 @@ class ModelArguments:
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
     )
+    exp_name: str = field(
+        default='none',
+        metadata={"help": "The name of the exp to train "}
+    )
 
 #Dont work with HF argparser
 #https://github.com/huggingface/transformers/blob/main/src/transformers/hf_argparser.py
@@ -246,6 +250,7 @@ def main_bench():
     parser.add_argument("--do_bench", help="do bench",action="store_true")
     parser.add_argument("--bench_on_train", help="do bench train",action="store_true")
     parser.add_argument("--bench_on_eval", help="do bench test",action="store_true")
+    parser.add_argument("--exp_name", help="do exp test",default="none")   
     args_bench, unknown = parser.parse_known_args()
     print(args_bench)
     batch_sizes = [int(item) for item in args_bench.batch_sizes.replace('[','').replace(']','').split(',')]*args_bench.max_bench_iter
@@ -267,7 +272,7 @@ def main_bench():
                                  inference_memory_csv_file=save_to+r'inference_memory.csv',
                                  train_time_csv_file=save_to+r'train_time.csv',
                                  train_memory_csv_file=save_to+r'train_memory.csv',
-                                 save_to_csv=True, env_print=False
+                                 save_to_csv=True, env_print=False, exp_name=args_bench.exp_name
                                  )
         benchmark = PyTorchBenchmark(args_full)
         benchmark.run()
@@ -654,6 +659,12 @@ def main(tasks_):
     # BENCHMARKING
     if data_args.do_bench:
         logger.info("*** Benchmarking ***")
+        if not model_args.exp_name in ['none', None]:
+            def_class = MODEL_NAMES[model_args.exp_name]
+            class_module = __import__("exps.models", fromlist=[def_class])
+            model_def = getattr(class_module, def_class)
+            trainer.model = model_def(trainer.model)
+            trainer.model.to('cuda')
         for cnt in range(1):#range(data_args.max_bench_iter):
             # Loop to handle MNLI double evaluation (matched, mis-matched)
             tasks = [data_args.task_name]
@@ -667,10 +678,7 @@ def main(tasks_):
                 eval_datasets.append(valid_mm_dataset)
                 combined = {}
             for eval_dataset, task in zip(eval_datasets, tasks):
-                
-                #stat_monitor = Monitor()
-                #stat_monitor.start_monitor()
-                
+
                 metrics = trainer.evaluate(eval_dataset=eval_dataset)
 
                 max_eval_samples = (
@@ -684,22 +692,10 @@ def main(tasks_):
                     combined.update(metrics)
                     
                 size_of = trainer.model.get_memory_footprint()
-                
-                #stat_monitor.stop_monitor()
-                #stats_ = stat_monitor.stats
-                
-                #metrics.update({'used_cpu':stats_[0]})
-                #metrics.update({'used_cpumem':stats_[1]})
-                #metrics.update({'used_gpu':stats_[2]})
-                #metrics.update({'used_gpumem':stats_[3]})
                 metrics.update({'size_of':size_of})
                 
                 if task is not None and "mnli" in task:
                     combined.update({'size_of':size_of})
-                #    combined.update({'used_cpu':stats_[0]})
-                #    combined.update({'used_cpumem':stats_[1]})
-                #    combined.update({'used_gpu':stats_[2]})
-                #    combined.update({'used_gpumem':stats_[3]})
                     
                 trainer.log_metrics("bench_"+str(cnt), metrics)
                 trainer.save_metrics("bench_"+str(cnt), combined if task is not None and "mnli" in task else metrics)
@@ -750,7 +746,7 @@ def _mp_fn(index):
 ##BAD MANNERS
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
-    tasks_ = ['stsb', 'cola',] # 'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
+    tasks_ = ['stsb', 'cola'] #'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
     main_bench()
     for task_ in tasks_:
         path_to = main(task_)

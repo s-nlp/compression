@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,used_cpu,used_cpumem,used_gpu,used_gpumem
+gpt2,1,128,0.7750,2259.0000,6.0000,1575.0000
+gpt2,16,128,0.7727,2260.0000,30.0000,2325.0000
+gpt2,32,128,0.7746,2259.0000,49.5000,3195.0000

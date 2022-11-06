@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,used_cpu,used_cpumem,used_gpu,used_gpumem
+roberta-base,1,128,0.7742,2274.0000,8.5000,2581.0000
+roberta-base,16,128,1.1582,2273.0000,50.0000,5475.0000
+roberta-base,32,128,0.7730,2275.0000,50.0000,8553.0000

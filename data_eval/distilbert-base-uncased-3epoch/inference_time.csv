@@ -1,4 +1,4 @@
 model,batch_size,sequence_length,result
-distilbert-base-uncased,1,128,0.0035
-distilbert-base-uncased,16,128,0.0184
-distilbert-base-uncased,32,128,0.0352
+distilbert-base-uncased,1,128,0.0036
+distilbert-base-uncased,16,128,0.0180
+distilbert-base-uncased,32,128,0.0342

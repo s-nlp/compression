@@ -1,0 +1,16 @@
+{
+    "epoch": 1.0,
+    "eval_combined_score": 0.8100882174980877,
+    "eval_loss": 0.7676228880882263,
+    "eval_pearson": 0.8133209376126512,
+    "eval_runtime": 11.3518,
+    "eval_samples": 1500,
+    "eval_samples_per_second": 132.138,
+    "eval_spearmanr": 0.8068554973835242,
+    "eval_steps_per_second": 132.138,
+    "size_of": 357681156,
+    "used_cpu": 0.428515625,
+    "used_cpumem": 2506,
+    "used_gpu": 37.0,
+    "used_gpumem": 8317.4375
+}

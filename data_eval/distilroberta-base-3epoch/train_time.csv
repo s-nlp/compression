@@ -1,4 +1,4 @@
 model,batch_size,sequence_length,result
-distilroberta-base,1,128,0.0199
-distilroberta-base,16,128,0.0657
-distilroberta-base,32,128,0.1249
+distilroberta-base,1,128,0.0186
+distilroberta-base,16,128,0.0644
+distilroberta-base,32,128,0.1229
