@@ -36,7 +36,7 @@ tl.set_backend('pytorch')
 
 logger = logging.getLogger(__name__)
 
-def lobert_student(config, student_model, student_mode='exact', num_hidden_layers = 12, verbose=True, DEBUG=False):
+def lobert_student(config, student_model, student_mode='exact', num_hidden_layers = 12, verbose=True, DEBUG=False, rank=50):
     """
     Create and initiate student_model. 
     :param config: configuration of parent model
@@ -128,33 +128,34 @@ def lobert_student(config, student_model, student_mode='exact', num_hidden_layer
     
     if student_mode == 'self_svd':
         logger.info('lobert mode : self_SVD_compression begin')
-        student_model = decompose_self_svd(student_model, self_attention_tensor, config, num_hidden_layers) 
+        student_model = decompose_self_svd(student_model, self_attention_tensor, config, num_hidden_layers, rank) 
     elif student_mode == 'ffn_svd':
         logger.info('lobert mode : ffn_SVD_compression begin')
         student_model = decompose_ffn_svd(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers)
-    elif student_mode == 'ffn_tuckervertical':
-        logger.info('lobert mode : ffn_tucker_compression begin')
-        student_model = decompose_ffn_tucker_vertical(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers)
-    elif student_mode == 'self_tuckerlayer':
-        logger.info('lobert mode : self_tucker_layer compression begin')
-        student_model = decompose_self_tucker_layer(student_model, self_attention_tensor, config, num_hidden_layers)
-    elif student_mode == 'self_falconlayer':
-        logger.info('lobert mode : self_falcon_layer compression begin')
-        student_model = decompose_self_falcon_layer(student_model, self_attention_tensor, config, num_hidden_layers)
-    elif student_mode == 'self_tuckervertical':
-        logger.info('lobert mode : self_tucker_vertical compression begin')
-        student_model = decompose_self_tucker_vertical(student_model, self_attention_tensor, config,num_hidden_layers)
-    elif student_mode == 'self_falconvertical':
-        logger.info('lobert mode : self_falcon_vertical compression begin')
-        student_model = decompose_self_falcon_vertical(student_model, self_attention_tensor, config,num_hidden_layers)
-    elif student_mode == 'self_tucker_4d':
-        logger.info('lobert mode : self_tucker_4d compression begin')
-        student_model = decompose_self_tucker_4d(student_model, self_attention_tensor, config,num_hidden_layers)
-    elif student_mode == 'self_falcon_4d':
-        logger.info('lobert mode : self_falcon_4d compression begin')
-        student_model = decompose_self_falcon_4d(student_model, self_attention_tensor, config,num_hidden_layers)
-    else:
-        raise NotImplementedError('not implemented for this student mode')
+    #TODO: reimplement this
+    #elif student_mode == 'ffn_tuckervertical':
+    #    logger.info('lobert mode : ffn_tucker_compression begin')
+    #    student_model = decompose_ffn_tucker_vertical(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers)
+    #elif student_mode == 'self_tuckerlayer':
+    #    logger.info('lobert mode : self_tucker_layer compression begin')
+    #    student_model = decompose_self_tucker_layer(student_model, self_attention_tensor, config, num_hidden_layers)
+    #elif student_mode == 'self_falconlayer':
+    #    logger.info('lobert mode : self_falcon_layer compression begin')
+    #    student_model = decompose_self_falcon_layer(student_model, self_attention_tensor, config, num_hidden_layers)
+    #elif student_mode == 'self_tuckervertical':
+    #    logger.info('lobert mode : self_tucker_vertical compression begin')
+    #    student_model = decompose_self_tucker_vertical(student_model, self_attention_tensor, config,num_hidden_layers)
+    #elif student_mode == 'self_falconvertical':
+    #    logger.info('lobert mode : self_falcon_vertical compression begin')
+    #    student_model = decompose_self_falcon_vertical(student_model, self_attention_tensor, config,num_hidden_layers)
+    #elif student_mode == 'self_tucker_4d':
+    #    logger.info('lobert mode : self_tucker_4d compression begin')
+    #    student_model = decompose_self_tucker_4d(student_model, self_attention_tensor, config,num_hidden_layers)
+    #elif student_mode == 'self_falcon_4d':
+    #    logger.info('lobert mode : self_falcon_4d compression begin')
+    #    student_model = decompose_self_falcon_4d(student_model, self_attention_tensor, config,num_hidden_layers)
+    #else:
+    #    raise NotImplementedError('not implemented for this student mode')
             
             
     #if args.fp16:
@@ -171,7 +172,7 @@ def lobert_student(config, student_model, student_mode='exact', num_hidden_layer
     return student_model
 
 
-def decompose_ffn_svd(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers, svd_rank = 306):
+def decompose_ffn_svd(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers, svd_rank = 51):
     """
     SVD Decompose student_model for intermediate and output for all the layers. 
     :param student_model: student model
@@ -185,21 +186,30 @@ def decompose_ffn_svd(student_model, intermediate_tensor, output_tensor, config,
     #     svd_rank : 51, 153, 306
     for i in range(config.num_hidden_layers):
         intermediate_weight = intermediate_tensor[i]
-        U, S, V = tl.partial_svd(intermediate_weight, n_eigenvecs=svd_rank)
-        S = torch.diag(S)
-        U = U.matmul(S)
+        U, S, Vt = torch.linalg.svd(intermediate_weight , full_matrices=False)
+        # truncate SVD and fuse Sigma matrix
+        w1 = torch.nn.Parameter(torch.mm(torch.diag(torch.sqrt(S[0:svd_rank])),Vt[0:svd_rank, :]))
+        w2 = torch.nn.Parameter(torch.mm(U[:, 0:svd_rank], torch.diag(torch.sqrt(S[0:svd_rank]))))
+        #U, S, V = tl.partial_svd(intermediate_weight, n_eigenvecs=svd_rank)
+        #S = torch.diag(S)
+        #U = U.matmul(S)
         intermediate = BertIntermediate_svd(config, svd_rank)
-        intermediate.dense_u.weight.data.copy_(V)
-        intermediate.dense_v.weight.data.copy_(U)
+        intermediate.dense_u.weight.data.copy_(w1)
+        intermediate.dense_v.weight.data.copy_(w2)
         intermediate.dense_v.bias.data.copy_(student_model.bert.encoder.layer[i].intermediate.dense.bias.data)
         
         output_weight = output_tensor[i]
-        U, S, V = tl.partial_svd(output_weight, n_eigenvecs=svd_rank)
-        S = torch.diag(S)
-        U = U.matmul(S)
+        #U, S, V = tl.partial_svd(output_weight, n_eigenvecs=svd_rank)
+        U, S, Vt = torch.linalg.svd(output_weight , full_matrices=False)
+        #S = torch.diag(S)
+        #U = U.matmul(S)
+
+        w1 = torch.nn.Parameter( torch.mm(torch.diag(torch.sqrt(S[0:svd_rank])),Vt[0:svd_rank, :]) )
+        w2 = torch.nn.Parameter( torch.mm(U[:, 0:svd_rank], torch.diag(torch.sqrt(S[0:svd_rank]))) )
+
         output = BertOutput_svd(config, svd_rank)
-        output.dense_u.weight.data.copy_(V)
-        output.dense_v.weight.data.copy_(U)
+        output.dense_u.weight.data.copy_(w1)
+        output.dense_v.weight.data.copy_(w2)
         output.dense_v.bias.data.copy_(student_model.bert.encoder.layer[i].output.dense.bias.data)
 
         student_model.bert.encoder.layer[i].intermediate = intermediate
@@ -260,26 +270,38 @@ def decompose_self_svd(student_model, self_attention_tensor, config, num_hidden_
         q = weight[0]
         k = weight[1]
         v = weight[2]
-        Uq, Sq, Vq = tl.partial_svd(q, n_eigenvecs=svd_rank)
-        Sq = torch.diag(Sq)
-        Uq = Uq.matmul(Sq)
-        Uk, Sk, Vk = tl.partial_svd(k, n_eigenvecs=svd_rank)
-        Sk = torch.diag(Sk)
-        Uk = Uk.matmul(Sk)
-        Uv, Sv, Vv = tl.partial_svd(v, n_eigenvecs=svd_rank)
-        Sv = torch.diag(Sv)
-        Uv = Uv.matmul(Sv)
+        #Uq, Sq, Vq = tl.partial_svd(q, n_eigenvecs=svd_rank)
+        #Sq = torch.diag(Sq)
+        #Uq = Uq.matmul(Sq)
+        #Uk, Sk, Vk = tl.partial_svd(k, n_eigenvecs=svd_rank)
+        #Sk = torch.diag(Sk)
+        #Uk = Uk.matmul(Sk)
+        #Uv, Sv, Vv = tl.partial_svd(v, n_eigenvecs=svd_rank)
+        #Sv = torch.diag(Sv)
+        #Uv = Uv.matmul(Sv)
+        U, S, Vt = torch.linalg.svd(q , full_matrices=False)
+        q1 = torch.mm(torch.diag(torch.sqrt(S[0:svd_rank])),Vt[0:svd_rank, :])
+        q2 = torch.mm(U[:, 0:svd_rank], torch.diag(torch.sqrt(S[0:svd_rank])))
+
+        U, S, Vt = torch.linalg.svd(k , full_matrices=False)
+        k1 = torch.mm(torch.diag(torch.sqrt(S[0:svd_rank])),Vt[0:svd_rank, :])
+        k2 = torch.mm(U[:, 0:svd_rank], torch.diag(torch.sqrt(S[0:svd_rank])))
+
+        U, S, Vt = torch.linalg.svd(v , full_matrices=False)
+        v1 = torch.mm(torch.diag(torch.sqrt(S[0:svd_rank])),Vt[0:svd_rank, :])
+        v2 = torch.mm(U[:, 0:svd_rank], torch.diag(torch.sqrt(S[0:svd_rank])))
+
         attention_layer = BertSelfAttention_svd(config, svd_rank)
-        attention_layer.query_u.weight.data.copy_(Vq)
-        attention_layer.query_v.weight.data.copy_(Uq)
+        attention_layer.query_u.weight.data.copy_(q1)
+        attention_layer.query_v.weight.data.copy_(q2)
         attention_layer.query_v.bias.data.copy_(student_model.bert.encoder.layer[i].attention.self.query.bias.data)
 
-        attention_layer.key_u.weight.data.copy_(Vk)
-        attention_layer.key_v.weight.data.copy_(Uk)
+        attention_layer.key_u.weight.data.copy_(k1)
+        attention_layer.key_v.weight.data.copy_(k2)
         attention_layer.key_v.bias.data.copy_(student_model.bert.encoder.layer[i].attention.self.value.bias.data)
 
-        attention_layer.value_u.weight.data.copy_(Vv)
-        attention_layer.value_v.weight.data.copy_(Uv)
+        attention_layer.value_u.weight.data.copy_(v1)
+        attention_layer.value_v.weight.data.copy_(v2)
         attention_layer.value_v.bias.data.copy_(student_model.bert.encoder.layer[i].attention.self.value.bias.data)
 
         student_model.bert.encoder.layer[i].attention.self = attention_layer

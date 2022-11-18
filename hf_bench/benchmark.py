@@ -23,6 +23,7 @@ from monitor import Monitor
 import timeit
 from typing import Callable, Optional
 
+
 from transformers.configuration_utils import PretrainedConfig
 from transformers.models.auto.modeling_auto import MODEL_MAPPING, MODEL_WITH_LM_HEAD_MAPPING
 from transformers.utils import is_py3nvml_available, is_torch_available, logging
@@ -100,7 +101,9 @@ class PyTorchBenchmark(Benchmark):
                     def_class = MODEL_NAMES[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
-                    model = model_def(model_cls(config))
+                    model = model_def(model_cls(config), int(self.args.rank))
+                    #model = model_def(model)
+
                 else:
                     model = model_cls(config)
             except ImportError:
@@ -164,7 +167,8 @@ class PyTorchBenchmark(Benchmark):
                     def_class = MODEL_NAMES[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
-                    model = model_def(model_cls(config))
+                    model = model_def(model_cls(config), int(self.args.rank))
+                    #model = model_def(model)
                 else:
                     model = model_cls(config)
             except ImportError:
@@ -214,6 +218,7 @@ class PyTorchBenchmark(Benchmark):
         return _train
 
     def _measure_speed(self, func) -> float:
+        from torch.utils.benchmark import Timer
         try:
             if self.args.is_tpu or self.args.torchscript:
                 # run additional 10 times to stabilize compilation for tpu and torchscript
@@ -224,12 +229,36 @@ class PyTorchBenchmark(Benchmark):
                     number=5,
                 )
 
+            timer = Timer(
+                stmt="func()",
+                globals = {
+                    'func': func},
+                num_threads=1,
+                        )
+
             # as written in https://docs.python.org/2/library/timeit.html#timeit.Timer.repeat, min should be taken rather than the average
-            runtimes = timeit.repeat(
-                func,
-                repeat=self.args.repeat,
-                number=10,
-            )
+            #runtimes = timeit.repeat(
+            #    func,
+            #    repeat=self.args.repeat,
+            #    number=10,
+            #)
+
+            qir = 1
+            results_mean = 1
+            while qir > 0.10:
+                results = timer.blocked_autorange(min_run_time=2)#min_run_time=100
+                results_mean = results.median
+                iqr = results.iqr
+                qir = iqr / results_mean
+                print('results_mean ',results_mean)
+                print('iqr ',iqr)
+                print('iqr / result_mean :: ',qir )
+                print(results)
+            
+            return results_mean
+
+
+
 
             if self.args.is_tpu and self.args.torch_xla_tpu_print_metrics:
                 import torch_xla.debug.metrics as met
@@ -266,7 +295,7 @@ class PyTorchBenchmark(Benchmark):
                     )
                     # init nvml
                     #######clear one
-                    nvml.nvmlInit()
+                    #nvml.nvmlInit()
                     stat_monitor = Monitor()
                     stat_monitor.start_monitor()
                     #for i in range(5):
@@ -281,7 +310,7 @@ class PyTorchBenchmark(Benchmark):
                     memory = stat_monitor.stats
                     #logger.info(str(stats_))
                     #######clear one
-                    #nvml.nvmlInit()
+                    nvml.nvmlInit()
                     #func()
                     #memory_bytes = measure_peak_memory_cpu(func)
                     #memory_cpu = Memory(memory_bytes) if isinstance(memory_bytes, int) else memory_bytes

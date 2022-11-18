@@ -53,6 +53,7 @@ class BenchmarkArguments:
         default='none',
         metadata={"help": "The name of the exp to train on: "}
     )
+    rank: int = field(default=150, metadata={"help": "rank of data"})
     batch_sizes: List[int] = list_field(
         default=[8], metadata={"help": "List of batch sizes for which memory and time performance will be evaluated"}
     )

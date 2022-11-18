@@ -235,6 +235,7 @@ class ModelArguments:
         default='none',
         metadata={"help": "The name of the exp to train "}
     )
+    rank: int = field(default=150, metadata={"help": "rank of data"})
 
 #Dont work with HF argparser
 #https://github.com/huggingface/transformers/blob/main/src/transformers/hf_argparser.py
@@ -250,7 +251,8 @@ def main_bench():
     parser.add_argument("--do_bench", help="do bench",action="store_true")
     parser.add_argument("--bench_on_train", help="do bench train",action="store_true")
     parser.add_argument("--bench_on_eval", help="do bench test",action="store_true")
-    parser.add_argument("--exp_name", help="do exp test",default="none")   
+    parser.add_argument("--exp_name", help="do exp test",default="none")  
+    parser.add_argument("--rank",default=0, help="rank of") 
     args_bench, unknown = parser.parse_known_args()
     print(args_bench)
     batch_sizes = [int(item) for item in args_bench.batch_sizes.replace('[','').replace(']','').split(',')]*args_bench.max_bench_iter
@@ -272,7 +274,7 @@ def main_bench():
                                  inference_memory_csv_file=save_to+r'inference_memory.csv',
                                  train_time_csv_file=save_to+r'train_time.csv',
                                  train_memory_csv_file=save_to+r'train_memory.csv',
-                                 save_to_csv=True, env_print=False, exp_name=args_bench.exp_name
+                                 save_to_csv=True, env_print=False, exp_name=args_bench.exp_name, rank=args_bench.rank
                                  )
         benchmark = PyTorchBenchmark(args_full)
         benchmark.run()
@@ -627,6 +629,12 @@ def main(tasks_):
     # EVALUATION
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
+        if not model_args.exp_name in ['none', None]:
+            def_class = MODEL_NAMES[model_args.exp_name]
+            class_module = __import__("exps.models", fromlist=[def_class])
+            model_def = getattr(class_module, def_class)
+            trainer.model = model_def(trainer.model, int(model_args.rank))
+            trainer.model.to('cuda')
 
         # Loop to handle MNLI double evaluation (matched, mis-matched)
         tasks = [data_args.task_name]
@@ -660,11 +668,24 @@ def main(tasks_):
     if data_args.do_bench:
         logger.info("*** Benchmarking ***")
         if not model_args.exp_name in ['none', None]:
-            def_class = MODEL_NAMES[model_args.exp_name]
-            class_module = __import__("exps.models", fromlist=[def_class])
-            model_def = getattr(class_module, def_class)
-            trainer.model = model_def(trainer.model)
-            trainer.model.to('cuda')
+            #def_class = MODEL_NAMES[model_args.exp_name]
+            #class_module = __import__("exps.models", fromlist=[def_class])
+            #model_def = getattr(class_module, def_class)
+            #model_def(trainer.model)
+            #trainer.model = model_def(trainer.model)
+            #trainer.model.to('cuda')
+            #######double train####
+            if True:
+                trainer2 = Trainer(
+                    model=trainer.model,
+                    args=training_args,
+                    train_dataset=train_dataset if training_args.do_train else None,
+                    eval_dataset=eval_dataset if training_args.do_eval else None,
+                    compute_metrics=compute_metrics,
+                    tokenizer=tokenizer,
+                    data_collator=data_collator,)
+                trainer2.train()
+
         for cnt in range(1):#range(data_args.max_bench_iter):
             # Loop to handle MNLI double evaluation (matched, mis-matched)
             tasks = [data_args.task_name]
@@ -746,7 +767,7 @@ def _mp_fn(index):
 ##BAD MANNERS
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
-    tasks_ = ['stsb', 'cola'] #'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
+    tasks_ = ['stsb', 'cola', 'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
     main_bench()
     for task_ in tasks_:
         path_to = main(task_)
