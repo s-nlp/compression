@@ -1,0 +1,3 @@
+model,score,size(MB),SPS,used_cpu,used_cpu_mem,used_gpu,used_gpu_mem,stsb,cola,mnli,mrpc,qnli,qqp,rte,sst2,wnli
+bert-base-uncased-1epoch,0.742,417.654,78.958,98.2,3041.0,16.0,1516.0,0.885,0.598,,,,,,,
+bert-base-uncased-1epoch-svd_selfatt,0.65,377.154,69.58,98.6,3061.0,13.0,1478.0,0.791,0.509,,,,,,,

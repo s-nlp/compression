@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,used_cpu,used_cpumem,used_gpu,used_gpumem
+distilroberta-base,1,128,0.7734,2271.0000,8.5000,2191.0000
+distilroberta-base,16,128,0.7746,2271.0000,8.5000,4133.0000
+distilroberta-base,32,128,0.7754,2272.0000,50.0000,6861.0000

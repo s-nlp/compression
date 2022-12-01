@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,result
+gpt2,1,128,0.0424
+gpt2,16,128,0.1191
+gpt2,32,128,0.2199

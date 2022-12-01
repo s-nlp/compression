@@ -16,6 +16,11 @@
 """ Finetuning the library models for sequence classification on GLUE."""
 # You can also adapt this script on your own text classification task. Pointers for this are left as comments.
 
+from hf_bench.benchmark import PyTorchBenchmark
+from hf_bench.benchmark_args import PyTorchBenchmarkArguments
+from exps.models import MODEL_NAMES
+
+import argparse
 import logging
 import os
 import random
@@ -52,7 +57,6 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from transformers.utils import add_start_docstrings
 
-
 import numpy as np
 import torch
 from torch import nn
@@ -60,7 +64,7 @@ from torch.utils.data import DataLoader, SequentialSampler, Subset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
-from monitor import Monitor
+from bench import GlueBench
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.23.0.dev0")
@@ -93,7 +97,7 @@ class DataTrainingArguments:
     """
 
     task_name: Optional[str] = field(
-        default=None,
+        default='cola',
         metadata={"help": "The name of the task to train on: " + ", ".join(task_to_keys.keys())},
     )
     dataset_name: Optional[str] = field(
@@ -113,6 +117,17 @@ class DataTrainingArguments:
     )
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached preprocessed datasets or not."}
+    )
+    do_bench: bool = field(
+        default=False, metadata={"help": "NVML benchmarking"}
+    )
+    max_bench_iter: Optional[int] = field(
+        default=5,
+        metadata={
+            "help": (
+                "Number of bench evaluation"
+            )
+        },
     )
     pad_to_max_length: bool = field(
         default=True,
@@ -216,28 +231,74 @@ class ModelArguments:
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
     )
+    exp_name: str = field(
+        default='none',
+        metadata={"help": "The name of the exp to train "}
+    )
+    rank: int = field(default=150, metadata={"help": "rank of data"})
 
+#Dont work with HF argparser
+#https://github.com/huggingface/transformers/blob/main/src/transformers/hf_argparser.py
+def main_bench():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_name_or_path",default="results.csv", help="write report to FILE")
+    parser.add_argument("--run_name",help="don't print status messages to hfgstdout")
+    parser.add_argument("--output_dir",help="don't print status messadsastdout")
+    parser.add_argument('--batch_sizes', help='batch_sizes', type=str, default='[1,64]')
+    parser.add_argument('--sequence_lengths', help='batch_sizes', type=str, default='[16,128]')
+    parser.add_argument('--max_bench_iter', help='how many', type=int, default=1)
+    parser.add_argument("--do_bench", help="do bench",action="store_true")
+    parser.add_argument("--bench_on_train", help="do bench train",action="store_true")
+    parser.add_argument("--bench_on_eval", help="do bench test",action="store_true")
+    parser.add_argument("--exp_name", help="do exp test",default="none")  
+    parser.add_argument("--rank",default=0, help="rank of") 
+    args_bench, unknown = parser.parse_known_args()
+    print(args_bench)
+    batch_sizes = [int(item) for item in args_bench.batch_sizes.replace('[','').replace(']','').split(',')]*args_bench.max_bench_iter
+    sequence_lengths = [int(item) for item in args_bench.sequence_lengths.replace('[','').replace(']','').split(',')]*args_bench.max_bench_iter
+    #args = parser.parse_args(sys.argv[1:])
+
+    if args_bench.do_bench:
+        save_to = args_bench.output_dir + args_bench.run_name+r'/'
+        isExist = os.path.exists(save_to)
+        if not isExist:
+            # Create a new directory because it does not exist 
+            os.makedirs(save_to)
+
+        args_full = PyTorchBenchmarkArguments(models=[args_bench.model_name_or_path], batch_sizes=batch_sizes, 
+                                 sequence_lengths=sequence_lengths,
+                                 training=args_bench.bench_on_train, inference=args_bench.bench_on_eval, cuda=True,
+                                 multi_process=True, verbose=False, trace_memory_line_by_line=False,
+                                 inference_time_csv_file=save_to+r'inference_time.csv',
+                                 inference_memory_csv_file=save_to+r'inference_memory.csv',
+                                 train_time_csv_file=save_to+r'train_time.csv',
+                                 train_memory_csv_file=save_to+r'train_memory.csv',
+                                 save_to_csv=True, env_print=False, exp_name=args_bench.exp_name, rank=args_bench.rank
+                                 )
+        benchmark = PyTorchBenchmark(args_full)
+        benchmark.run()
+        
 
 def main(tasks_):
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
-
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        model_args, data_args, training_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
 
     data_args.task_name = tasks_
+    #TODO: redo in os
     training_args.output_dir=training_args.output_dir + training_args.run_name +'/' + tasks_
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
     #send_example_telemetry("run_glue", model_args, data_args)
-    
 
     # Setup logging
     logging.basicConfig(
@@ -277,7 +338,7 @@ def main(tasks_):
 
     # Set seed before initializing model.
     set_seed(training_args.seed)
-
+    
     # Get the datasets: you can either provide your own CSV/JSON training and evaluation files (see below)
     # or specify a GLUE benchmark task (the dataset will be downloaded automatically from the datasets Hub).
     #
@@ -370,6 +431,7 @@ def main(tasks_):
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
+
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
         num_labels=num_labels,
@@ -564,9 +626,16 @@ def main(tasks_):
             trainer.save_metrics("train", metrics)
             trainer.save_state()
 
-    # Evaluation
+    # EVALUATION
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
+        if not model_args.exp_name in ['none', None]:
+            def_class = MODEL_NAMES[model_args.exp_name]
+            class_module = __import__("exps.models", fromlist=[def_class])
+            model_def = getattr(class_module, def_class)
+            trainer.model = model_def(trainer.model, int(model_args.rank))
+            trainer.model.to('cuda')
+
         # Loop to handle MNLI double evaluation (matched, mis-matched)
         tasks = [data_args.task_name]
         eval_datasets = [eval_dataset]
@@ -578,8 +647,7 @@ def main(tasks_):
                 valid_mm_dataset = valid_mm_dataset.select(range(max_eval_samples))
             eval_datasets.append(valid_mm_dataset)
             combined = {}
-        stat_monitor = Monitor()
-        stat_monitor.start_monitor()
+
         for eval_dataset, task in zip(eval_datasets, tasks):
             metrics = trainer.evaluate(eval_dataset=eval_dataset)
 
@@ -592,25 +660,66 @@ def main(tasks_):
                 metrics = {k + "_mm": v for k, v in metrics.items()}
             if task is not None and "mnli" in task:
                 combined.update(metrics)
-                
-            size_of = trainer.model.get_memory_footprint()
-            stat_monitor.stop_monitor()
-            stats_ = stat_monitor.stats
-            metrics.update({'used_cpu':stats_[0]})
-            metrics.update({'used_cpumem':stats_[1]})
-            metrics.update({'used_gpu':stats_[2]})
-            metrics.update({'used_gpumem':stats_[3]})
-            metrics.update({'size_of':size_of})
-            
-            if task is not None and "mnli" in task:
-                combined.update({'size_of':size_of})
-                combined.update({'used_cpu':stats_[0]})
-                combined.update({'used_cpumem':stats_[1]})
-                combined.update({'used_gpu':stats_[2]})
-                combined.update({'used_gpumem':stats_[3]})
-                
+
             trainer.log_metrics("eval", metrics)
             trainer.save_metrics("eval", combined if task is not None and "mnli" in task else metrics)
+
+    # BENCHMARKING
+    if data_args.do_bench:
+        logger.info("*** Benchmarking ***")
+        if not model_args.exp_name in ['none', None]:
+            #def_class = MODEL_NAMES[model_args.exp_name]
+            #class_module = __import__("exps.models", fromlist=[def_class])
+            #model_def = getattr(class_module, def_class)
+            #model_def(trainer.model)
+            #trainer.model = model_def(trainer.model)
+            #trainer.model.to('cuda')
+            #######double train####
+            if True:
+                trainer2 = Trainer(
+                    model=trainer.model,
+                    args=training_args,
+                    train_dataset=train_dataset if training_args.do_train else None,
+                    eval_dataset=eval_dataset if training_args.do_eval else None,
+                    compute_metrics=compute_metrics,
+                    tokenizer=tokenizer,
+                    data_collator=data_collator,)
+                trainer2.train()
+
+        for cnt in range(1):#range(data_args.max_bench_iter):
+            # Loop to handle MNLI double evaluation (matched, mis-matched)
+            tasks = [data_args.task_name]
+            eval_datasets = [eval_dataset]
+            if data_args.task_name == "mnli":
+                tasks.append("mnli-mm")
+                valid_mm_dataset = raw_datasets["validation_mismatched"]
+                if data_args.max_eval_samples is not None:
+                    max_eval_samples = min(len(valid_mm_dataset), data_args.max_eval_samples)
+                    valid_mm_dataset = valid_mm_dataset.select(range(max_eval_samples))
+                eval_datasets.append(valid_mm_dataset)
+                combined = {}
+            for eval_dataset, task in zip(eval_datasets, tasks):
+
+                metrics = trainer.evaluate(eval_dataset=eval_dataset)
+
+                max_eval_samples = (
+                    data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+                )
+                metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+
+                if task == "mnli-mm":
+                    metrics = {k + "_mm": v for k, v in metrics.items()}
+                if task is not None and "mnli" in task:
+                    combined.update(metrics)
+                    
+                size_of = trainer.model.get_memory_footprint()
+                metrics.update({'size_of':size_of})
+                
+                if task is not None and "mnli" in task:
+                    combined.update({'size_of':size_of})
+                    
+                trainer.log_metrics("bench_"+str(cnt), metrics)
+                trainer.save_metrics("bench_"+str(cnt), combined if task is not None and "mnli" in task else metrics)
 
     if training_args.do_predict:
         logger.info("*** Predict ***")
@@ -647,12 +756,8 @@ def main(tasks_):
         kwargs["dataset_args"] = data_args.task_name
         kwargs["dataset"] = f"GLUE {data_args.task_name.upper()}"
 
-    if training_args.push_to_hub:
-        trainer.push_to_hub(**kwargs)
-    else:
-        trainer.create_model_card(**kwargs)
+        #training_args.output_dir
     return training_args.output_dir
-
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)
@@ -660,9 +765,10 @@ def _mp_fn(index):
 
 
 ##BAD MANNERS
-from bench import main as main_bench
 if __name__ == "__main__":
+    #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
     tasks_ = ['stsb', 'cola', 'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
+    main_bench()
     for task_ in tasks_:
         path_to = main(task_)
-    main_bench(['--path',path_to+r'/../..'])
+    GlueBench(['--path',path_to+r'/../..'])
