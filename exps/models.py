@@ -1,9 +1,10 @@
 from .lobert_utils import lobert_student
 from .dummy_model import dummy_func
 from .head_pruning import random_head_pruning_model
-from .simple_svd import simple_svd_func
-from .unstructured_prune import uns_prune
-from .structured_prune import str_prune
+#from .simple_svd import simple_svd_func
+#from .unstructured_prune import uns_prune
+#from .structured_prune import str_prune
+from .ttm_compress_bert import ttm_compress_bert_ffn
 
 from collections import OrderedDict
 MODEL_NAMES = OrderedDict(
@@ -15,7 +16,8 @@ MODEL_NAMES = OrderedDict(
         ("svd_fnn", "lobert_self_ffn"),
         ("our_fnn", "simple_svd_model"),
         ("str_prune", "structured_pruning"),
-        ("uns_prune", "unstructured_pruning")
+        ("uns_prune", "unstructured_pruning"),
+        ("ttm_ffn", "apply_ttm_compress_bert_ffn")
     ])
 
 def structured_pruning(model):
@@ -30,6 +32,9 @@ def simple_svd_model(model, rank = 150):
     model = simple_svd_func(model, rank)
     return model
 
+def apply_ttm_compress_bert_ffn(model, ranks, input_dims, output_dims):
+    model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims)
+    return model
 
 def dummy_self(model):
     model = dummy_func(model)
