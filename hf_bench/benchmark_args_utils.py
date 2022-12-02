@@ -19,7 +19,7 @@ import json
 import warnings
 from dataclasses import dataclass, field
 from time import time
-from typing import List
+from typing import List, Tuple
 
 from transformers.utils import logging
 
@@ -54,6 +54,18 @@ class BenchmarkArguments:
         metadata={"help": "The name of the exp to train on: "}
     )
     rank: int = field(default=150, metadata={"help": "rank of data"})
+    tt_ranks: Tuple[int, ...] = field(
+        default=(10, 10, 10),
+        metadata={"help": "Ranks of TTm decomposition of weights"}
+    )
+    tt_input_dims: Tuple[int, ...] = field(
+        default=(4,6,8,4),
+        metadata={"help": "Input dimensions in TTMatrix representation of weights"}
+    )
+    tt_output_dims: Tuple[int, ...] = field(
+        default=(8,8,6,8),
+        metadata={"help": "Output dimensions in TTMatrix representation of weights"}
+    )
     batch_sizes: List[int] = list_field(
         default=[8], metadata={"help": "List of batch sizes for which memory and time performance will be evaluated"}
     )

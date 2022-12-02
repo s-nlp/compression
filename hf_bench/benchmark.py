@@ -101,8 +101,12 @@ class PyTorchBenchmark(Benchmark):
                     def_class = MODEL_NAMES[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
-                    model = model_def(model_cls(config), int(self.args.rank))
-                    #model = model_def(model)
+                    
+                    if self.args.exp_name == "ttm_ffn":
+                        model = model_def(model_cls(config), self.args.tt_ranks, self.args.tt_input_dims, self.args.tt_output_dims)
+                    else:
+                        model = model_def(model_cls(config), int(self.args.rank))
+                    
 
                 else:
                     model = model_cls(config)
@@ -167,8 +171,11 @@ class PyTorchBenchmark(Benchmark):
                     def_class = MODEL_NAMES[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
-                    model = model_def(model_cls(config), int(self.args.rank))
-                    #model = model_def(model)
+                    if self.args.exp_name == "ttm_ffn":
+                        model = model_def(model_cls(config), self.args.tt_ranks, self.args.tt_input_dims, self.args.tt_output_dims)
+                    else:
+                        model = model_def(model_cls(config), int(self.args.rank))
+                    
                 else:
                     model = model_cls(config)
             except ImportError:
@@ -339,5 +346,6 @@ class PyTorchBenchmark(Benchmark):
 
             return memory, summary
         except RuntimeError as e:
+            self.print_fn(f"memory test")
             self.print_fn(f"Doesn't fit on GPU. {e}")
             return "N/A", None

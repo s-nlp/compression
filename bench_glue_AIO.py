@@ -26,7 +26,7 @@ import os
 import random
 import sys
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Tuple
 from datetime import datetime
 
 import datasets
@@ -236,11 +236,23 @@ class ModelArguments:
         metadata={"help": "The name of the exp to train "}
     )
     rank: int = field(default=150, metadata={"help": "rank of data"})
+    tt_ranks: Tuple[int, ...] = field(
+        default=(10,10,10),
+        metadata={"help": "Ranks of TTm decomposition of weights"}
+    )
+    tt_input_dims: Tuple[int, ...] = field(
+        default=(4,6,8,4),
+        metadata={"help": "Input dimensions in TTMatrix representation of weights"}
+    )
+    tt_output_dims: Tuple[int, ...] = field(
+        default=(8,8,6,8),
+        metadata={"help": "Output dimensions in TTMatrix representation of weights"}
+    )
 
 #Dont work with HF argparser
 #https://github.com/huggingface/transformers/blob/main/src/transformers/hf_argparser.py
 def main_bench():
-
+    print("bebebe")
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name_or_path",default="results.csv", help="write report to FILE")
     parser.add_argument("--run_name",help="don't print status messages to hfgstdout")
@@ -253,6 +265,9 @@ def main_bench():
     parser.add_argument("--bench_on_eval", help="do bench test",action="store_true")
     parser.add_argument("--exp_name", help="do exp test",default="none")  
     parser.add_argument("--rank",default=0, help="rank of") 
+    parser.add_argument("--tt_ranks", type=int, nargs="+", default=(10,10,10), help="ranks of TT decomposition") 
+    parser.add_argument("--tt_input_dims", type=int, nargs="+", default=(4,6,8,4), help="input_dims in TTMatrix") 
+    parser.add_argument("--tt_output_dims", type=int, nargs="+", default=(8,8,6,8), help="output_dims in TTMatrix")
     args_bench, unknown = parser.parse_known_args()
     print(args_bench)
     batch_sizes = [int(item) for item in args_bench.batch_sizes.replace('[','').replace(']','').split(',')]*args_bench.max_bench_iter
@@ -274,8 +289,9 @@ def main_bench():
                                  inference_memory_csv_file=save_to+r'inference_memory.csv',
                                  train_time_csv_file=save_to+r'train_time.csv',
                                  train_memory_csv_file=save_to+r'train_memory.csv',
-                                 save_to_csv=True, env_print=False, exp_name=args_bench.exp_name, rank=args_bench.rank
-                                 )
+                                 save_to_csv=True, env_print=False, exp_name=args_bench.exp_name, 
+                                 rank=args_bench.rank, tt_ranks=args_bench.tt_ranks,
+                                 tt_input_dims=args_bench.tt_input_dims, tt_output_dims=args_bench.tt_output_dims)
         benchmark = PyTorchBenchmark(args_full)
         benchmark.run()
         
@@ -633,7 +649,10 @@ def main(tasks_):
             def_class = MODEL_NAMES[model_args.exp_name]
             class_module = __import__("exps.models", fromlist=[def_class])
             model_def = getattr(class_module, def_class)
-            trainer.model = model_def(trainer.model, int(model_args.rank))
+            if model_args.exp_name == "ttm_ffn":
+                trainer.model = model_def(trainer.model, model_args.tt_ranks, model_args.tt_input_dims, model_args.tt_output_dims)
+            else:
+                trainer.model = model_def(trainer.model, int(model_args.rank))
             trainer.model.to('cuda')
 
         # Loop to handle MNLI double evaluation (matched, mis-matched)
@@ -768,6 +787,7 @@ def _mp_fn(index):
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
     tasks_ = ['stsb', 'cola', 'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
+    #tasks_ = ['stsb', 'cola']
     main_bench()
     for task_ in tasks_:
         path_to = main(task_)
