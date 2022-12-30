@@ -600,7 +600,7 @@ def main(tasks_):
         data_collator = None
 
     # Initialize our Trainer
-    if not model_args.comp_func in ['none', None]
+    if not model_args.comp_func in ['none', None]:
         trainer = CustomTrainer(
             model=model,
             args=training_args,
@@ -613,6 +613,14 @@ def main(tasks_):
         trainer.make_grad_bank(model)
     else:
         trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset if training_args.do_train else None,
+            eval_dataset=eval_dataset if training_args.do_eval else None,
+            compute_metrics=compute_metrics,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+        )
     trainer.model.to('cuda')
 
     # Training
@@ -737,6 +745,7 @@ def main(tasks_):
             
             if task is not None and "mnli" in task:
                 combined.update({'size_of':size_of})
+                combined.update({'param_of':param_of})
                 
             trainer.log_metrics("bench_", metrics)
             trainer.save_metrics("bench_0", combined if task is not None and "mnli" in task else metrics)
