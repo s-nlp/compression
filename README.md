@@ -9,39 +9,63 @@ This benchmark is mostly based on the following code [HF-run_glue.py](https://gi
 Benchmark based on GLUE which is made up of a total of 9 different tasks. Here is how to run the script:
 
 ```bash
+model = "bert-base-uncased"
+random = 814084
 python bench_glue_AIO.py \
-    --model_name_or_path gpt2 \
-    --run_name gpt2-3epoch \
-    --task_name sst2 \
-    --save_strategy "epoch" \
-    --do_train \
-    --logging_strategy no \
-    --save_strategy no \
-    --do_eval \
-    --max_seq_length 128 \
-    --per_device_train_batch_size 72 \
-    --per_device_eval_batch_size 1 \
-    --learning_rate 5e-5 \
-    --num_train_epochs 3 \
-    --evaluation_strategy 'epoch' \
-    --seed 1337 \
-    --output_dir ./data/ \
-    --overwrite_output_dir
+				--model_name_or_path $model  \
+				--run_name $model-full-$random \
+				--comp_func 'none'
+				--save_strategy "epoch" \
+				--logging_strategy no \
+				--do_bench --bench_on_eval --bench_on_train \
+				--max_bench_iter 1 \
+				--batch_sizes 1 16 32 \
+				--sequence_lengths 128 \
+				--max_seq_length 128 \
+				--per_device_train_batch_size 32 \
+				--per_device_eval_batch_size 128 \
+				--learning_rate 5e-5 \
+				--num_train_epochs 2 \
+				--evaluation_strategy 'epoch' \
+				--seed $random \
+				--output_dir ./data_eval/ \
+				--overwrite_output_dir \
+				--do_train --do_eval 
 ```
-This script will train and eval gpt2 model for GLUE, and then output the results with GPU and CPU utilization.
+This script will train and eval bert-base model for GLUE, and then output the results with GPU and CPU utilization.
 
+| model                  | score    | size(MB) | size(M param) | SPS       | train speed | inf speed | used_cpu | used_cpu_mem | used_gpu | used_gpu_mem |
+|------------------------|----------|----------|---------------|-----------|-------------|-----------|----------|--------------|----------|--------------|
+| bert | 0.79508  | 417.6553 | 109.483778    | 513.44118 | 0.21948     | 0.078     | 35.40032 | 2644.8       | 44.9     | 1599         |
+| **stsb**               | **cola** | **mnli** | **mrpc**      | **qnli**  | **qqp**     | **rte**   | **sst2** | **wnli**     |          |              |
+| 0.88816                | 0.57574  | 0.84928  | 0.90352       | 0.91338   | 0.87682     | 0.67508   | 0.92432  | 0.5493       |          |              |
+
+To train model with compression function you can change script to:
+```bash
+	--comp_func 'svd_ffn_w'  \
+    --rank 210 \
+    --double_train \
 ```
-model,score,size(MB),SPS,used_cpu,used_cpu_mem,used_gpu,used_gpu_mem,stsb,cola,mnli,mrpc,qnli,qqp,rte,sst2,wnli
-gpt2-3epoch,0.731,486.706,113.125,0.42,3491.0,36.0,15473.438,0.845,0.318,0.819,0.847,0.885,0.861,0.632,0.909,0.465
-```
+where __svd_ffn_w__ is SVD (all models available at /exps/models.py) and __rank__ is SVD rank. __double_train__ is the function for additional training after svd compression, in some cases gives better results.
+
 
 ## Details
 
 For evaluate gpu/cpu metrics we use pynvml library. Model only evaluate during evalatuation process.
 
-You can also get scores without training model by directly using bench.py script.
+You can also get scores without training model by directly using __synthetic_benchmark.py__ script.
 ```
-python bench.py --path ./data/ --file ./ans.csv
+synthetic_benchmark.py \
+				--model_name_or_path 'gpt2'  \
+				--run_name 'gpt2-full' \
+				--comp_func 'none' \
+                --do_bench --bench_on_eval --bench_on_train \
+				--max_bench_iter 1 \
+				--batch_sizes 1 16 32 \
+				--sequence_lengths 128 \
+				--max_seq_length 128 \
+				--seed 42 \
+				--output_dir ./data_eval_gpt/
 ```
 
 Data folder contains evaluation results for gpt2/bert-base-cased/distilbert/pruned-bert on 3090. This can be used as example.
@@ -54,7 +78,11 @@ exps folder contains various model compression experiments:
 
 1. head pruning, based on [16vs1head paper](https://github.com/huggingface/transformers/tree/main/examples/research_projects/bertology)
 
-2. more to come
+2. Standart SVD
+
+3. Weighted SVD
+
+4. TTM
 
 ## to-do
 
