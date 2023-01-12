@@ -1,10 +1,9 @@
-for rank in 150
+for model in bert-base-uncased
 do
    echo "doing $model"
    CUDA_VISIBLE_DEVICES=5 python bench_glue_AIO.py \
-	--model_name_or_path bert-base-uncased \
-	--run_name gather_fisher_matrices_cola --exp_name 'fwsvd_ffn' --rank $rank \
-	--low_rank_method "anderson" \
+	--model_name_or_path $model \
+	--run_name ttm-checkpoints-$model --exp_name 'ttm_ffn' \
 	--save_strategy "epoch" \
 	--logging_strategy no --save_strategy no \
 	--do_bench --bench_on_eval --bench_on_train \
@@ -18,7 +17,7 @@ do
 	--num_train_epochs 3 \
 	--evaluation_strategy 'epoch' \
 	--seed 42 \
-	--output_dir ./nla_proj_results/ \
+	--output_dir ./ttm_proj_results/ \
 	--overwrite_output_dir \
 	--do_train --do_eval \
 #	--fp16 --fp16_full_eval 
