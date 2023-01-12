@@ -54,6 +54,7 @@ class BenchmarkArguments:
         metadata={"help": "The name of the exp to train on: "}
     )
     rank: int = field(default=150, metadata={"help": "rank of data"})
+    use_baseline: bool = field(default=False, metadata={"help": "set Ficher information in FWSVD to torch.ones"})
     tt_ranks: Tuple[int, ...] = field(
         default=(10, 10, 10),
         metadata={"help": "Ranks of TTm decomposition of weights"}
