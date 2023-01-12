@@ -131,7 +131,7 @@ def lobert_student(config, student_model, student_mode='exact', num_hidden_layer
         student_model = decompose_self_svd(student_model, self_attention_tensor, config, num_hidden_layers, rank) 
     elif student_mode == 'ffn_svd':
         logger.info('lobert mode : ffn_SVD_compression begin')
-        student_model = decompose_ffn_svd(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers)
+        student_model = decompose_ffn_svd(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers, rank)
     #TODO: reimplement this
     #elif student_mode == 'ffn_tuckervertical':
     #    logger.info('lobert mode : ffn_tucker_compression begin')
