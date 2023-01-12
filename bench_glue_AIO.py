@@ -236,8 +236,10 @@ class ModelArguments:
         metadata={"help": "The name of the exp to train "}
     )
     rank: int = field(default=150, metadata={"help": "rank of data"})
+    use_baseline: bool = field(default=False, metadata={"help": "set Ficher information in FWSVD to torch.ones"})
+    low_rank_method: str = field(default="row-sum-weighted-svd", metadata={"help": "method to solve weighted low rank approximation in FWSVD"})
     tt_ranks: Tuple[int, ...] = field(
-        default=(10,10,10),
+        default=(25,25,25),
         metadata={"help": "Ranks of TTm decomposition of weights"}
     )
     tt_input_dims: Tuple[int, ...] = field(
@@ -252,7 +254,6 @@ class ModelArguments:
 #Dont work with HF argparser
 #https://github.com/huggingface/transformers/blob/main/src/transformers/hf_argparser.py
 def main_bench():
-    print("bebebe")
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name_or_path",default="results.csv", help="write report to FILE")
     parser.add_argument("--run_name",help="don't print status messages to hfgstdout")
@@ -263,9 +264,11 @@ def main_bench():
     parser.add_argument("--do_bench", help="do bench",action="store_true")
     parser.add_argument("--bench_on_train", help="do bench train",action="store_true")
     parser.add_argument("--bench_on_eval", help="do bench test",action="store_true")
-    parser.add_argument("--exp_name", help="do exp test",default="none")  
-    parser.add_argument("--rank",default=0, help="rank of") 
-    parser.add_argument("--tt_ranks", type=int, nargs="+", default=(10,10,10), help="ranks of TT decomposition") 
+    parser.add_argument("--exp_name", help="do exp test",default="none")
+    parser.add_argument("--rank",default=0, help="rank of")
+    parser.add_argument("--use_baseline", action="store_true", help="set Ficher information in FWSVD to torch.ones")
+    parser.add_argument("--low_rank_method", default="row-sum-weighted-svd", help="method to solve weighted low rank approximation in FWSVD")
+    parser.add_argument("--tt_ranks", type=int, nargs="+", default=(25,25,25), help="ranks of TT decomposition") 
     parser.add_argument("--tt_input_dims", type=int, nargs="+", default=(4,6,8,4), help="input_dims in TTMatrix") 
     parser.add_argument("--tt_output_dims", type=int, nargs="+", default=(8,8,6,8), help="output_dims in TTMatrix")
     args_bench, unknown = parser.parse_known_args()
@@ -651,6 +654,8 @@ def main(tasks_):
             model_def = getattr(class_module, def_class)
             if model_args.exp_name == "ttm_ffn":
                 trainer.model = model_def(trainer.model, model_args.tt_ranks, model_args.tt_input_dims, model_args.tt_output_dims)
+            elif model_args.exp_name == "fwsvd_ffn":
+                trainer.model = model_def(trainer.model, trainer.get_train_dataloader(), rank=int(model_args.rank), device="cuda:0", use_baseline=model_args.use_baseline, low_rank_method=model_args.low_rank_method)
             else:
                 trainer.model = model_def(trainer.model, int(model_args.rank))
             trainer.model.to('cuda')
@@ -786,9 +791,16 @@ def _mp_fn(index):
 ##BAD MANNERS
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
-    tasks_ = ['stsb', 'cola', 'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
-    #tasks_ = ['stsb', 'cola']
-    main_bench()
+    #tasks_ = ['stsb', 'cola', 'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
+    tasks_ = ['cola']
+    #tasks_ = ['cola', 'sst2', 'mrpc', 'stsb']
+    #tasks_ = ['stsb', 'cola', 'mrpc', 'qnli', 'rte', 'sst2', 'wnli']
+    #main_bench()
     for task_ in tasks_:
         path_to = main(task_)
+        #try:
+        #    path_to = main(task_)
+        #except Exception: # should catch torch._C.LinAlgError
+        #    pass
+
     GlueBench(['--path',path_to+r'/../..'])
