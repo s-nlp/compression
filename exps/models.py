@@ -48,7 +48,7 @@ def apply_fwsvd_compress_bert_ffn(model, dataloader, rank, device, use_baseline=
     print("="*50)
     return model
 
-def dummy_self(model):
+def dummy_self(model, *args):
     model = dummy_func(model)
     return model
 
