@@ -792,15 +792,9 @@ def _mp_fn(index):
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
     #tasks_ = ['stsb', 'cola', 'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
-    tasks_ = ['cola']
-    #tasks_ = ['cola', 'sst2', 'mrpc', 'stsb']
-    #tasks_ = ['stsb', 'cola', 'mrpc', 'qnli', 'rte', 'sst2', 'wnli']
-    #main_bench()
+    tasks_ = ['cola', 'stsb']
+    main_bench()
     for task_ in tasks_:
         path_to = main(task_)
-        #try:
-        #    path_to = main(task_)
-        #except Exception: # should catch torch._C.LinAlgError
-        #    pass
 
     GlueBench(['--path',path_to+r'/../..'])
