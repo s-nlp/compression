@@ -4,7 +4,7 @@ from .head_pruning import random_head_pruning_model
 #from .simple_svd import simple_svd_func
 #from .unstructured_prune import uns_prune
 #from .structured_prune import str_prune
-from .ttm_compress_bert import ttm_compress_bert_ffn
+from .ttm.ttm_compress_bert import ttm_compress_bert_ffn
 from .fwsvd_compress_bert import compute_nd_replace_dense
 
 from collections import OrderedDict
