@@ -7,6 +7,7 @@ from .structured_prune import str_prune
 from .ttm_compress_bert import ttm_compress_bert_ffn
 
 from collections import OrderedDict
+
 MODEL_NAMES = OrderedDict(
     [
         # Base model mapping
@@ -19,30 +20,41 @@ MODEL_NAMES = OrderedDict(
         ("svd_ffn_w", "weight_svd_model"),
         ("svd_ffn_w_inv", "weight_svd_inv_model"),
         ("uns_prune", "unstructured_pruning"),
-        ("ttm_ffn", "apply_ttm_compress_bert_ffn")
-    ])
+        ("ttm_ffn", "apply_ttm_compress_bert_ffn"),
+    ]
+)
+
 
 def apply_ttm_compress_bert_ffn(model, ranks, input_dims, output_dims):
     model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims)
     return model
 
+
 def structured_pruning(model):
     model = str_prune(model, 0.6)
     return model
+
 
 def unstructured_pruning(model):
     model = uns_prune(model, 0.6)
     return model
 
-def simple_svd_model(model, rank = 150):
+
+def simple_svd_model(model, rank=150):
     model = simple_svd_func(model, rank)
     return model
 
-def weight_svd_model(model, rank = 150, weight_int=None, weight_out=None, weight_count=None):
+
+def weight_svd_model(
+    model, rank=150, weight_int=None, weight_out=None, weight_count=None
+):
     model = w_svd_func(model, rank, weight_int, weight_out, weight_count)
     return model
 
-def weight_svd_inv_model(model, rank = 150, weight_int=None, weight_out=None, weight_count=None):
+
+def weight_svd_inv_model(
+    model, rank=150, weight_int=None, weight_out=None, weight_count=None
+):
     model = w_svd_func_inv(model, rank, weight_int, weight_out, weight_count)
     return model
 
@@ -51,20 +63,28 @@ def dummy_self(model):
     model = dummy_func(model)
     return model
 
+
 def random_head_pruning(model):
     model = random_head_pruning_model(model)
     return model
 
-def lobert_self_svd(model, rank = 150):
-    model = lobert_student(model.config, 
-        model, 
-        student_mode = "self_svd", rank=rank,
-        num_hidden_layers = model.config.num_hidden_layers)
+
+def lobert_self_svd(model, rank=150):
+    model = lobert_student(
+        model.config,
+        model,
+        student_mode="self_svd",
+        rank=rank,
+        num_hidden_layers=model.config.num_hidden_layers,
+    )
     return model
 
+
 def lobert_self_ffn(model):
-    model = lobert_student(model.config, 
-        model, 
-        student_mode = "ffn_svd", 
-        num_hidden_layers = model.config.num_hidden_layers)
+    model = lobert_student(
+        model.config,
+        model,
+        student_mode="ffn_svd",
+        num_hidden_layers=model.config.num_hidden_layers,
+    )
     return model
