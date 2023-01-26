@@ -238,10 +238,6 @@ class ModelArguments:
     rank: int = field(default=150, metadata={"help": "rank of data"})
     use_baseline: bool = field(default=False, metadata={"help": "set Ficher information in FWSVD to torch.ones"})
     low_rank_method: str = field(default="row-sum-weighted-svd", metadata={"help": "method to solve weighted low rank approximation in FWSVD"})
-    tt_ranks: Tuple[int, ...] = field(
-        default=(25,25,25),
-        metadata={"help": "Ranks of TTm decomposition of weights"}
-    )
     tt_input_dims: Tuple[int, ...] = field(
         default=(4,6,8,4),
         metadata={"help": "Input dimensions in TTMatrix representation of weights"}
@@ -268,7 +264,6 @@ def main_bench():
     parser.add_argument("--rank",default=0, help="rank of")
     parser.add_argument("--use_baseline", action="store_true", help="set Ficher information in FWSVD to torch.ones")
     parser.add_argument("--low_rank_method", default="row-sum-weighted-svd", help="method to solve weighted low rank approximation in FWSVD")
-    parser.add_argument("--tt_ranks", type=int, nargs="+", default=(25,25,25), help="ranks of TT decomposition") 
     parser.add_argument("--tt_input_dims", type=int, nargs="+", default=(4,6,8,4), help="input_dims in TTMatrix") 
     parser.add_argument("--tt_output_dims", type=int, nargs="+", default=(8,8,6,8), help="output_dims in TTMatrix")
     args_bench, unknown = parser.parse_known_args()
@@ -293,8 +288,8 @@ def main_bench():
                                  train_time_csv_file=save_to+r'train_time.csv',
                                  train_memory_csv_file=save_to+r'train_memory.csv',
                                  save_to_csv=True, env_print=False, exp_name=args_bench.exp_name, 
-                                 rank=args_bench.rank, tt_ranks=args_bench.tt_ranks,
-                                 tt_input_dims=args_bench.tt_input_dims, tt_output_dims=args_bench.tt_output_dims)
+                                 rank=args_bench.rank, tt_input_dims=args_bench.tt_input_dims,
+                                 tt_output_dims=args_bench.tt_output_dims)
         benchmark = PyTorchBenchmark(args_full)
         benchmark.run()
         
@@ -653,7 +648,10 @@ def main(tasks_):
             class_module = __import__("exps.models", fromlist=[def_class])
             model_def = getattr(class_module, def_class)
             if model_args.exp_name == "ttm_ffn":
-                trainer.model = model_def(trainer.model, model_args.tt_ranks, model_args.tt_input_dims, model_args.tt_output_dims)
+                # make list of equal tensor ranks
+                # e.g. if tt_input_dims is [4,6,8,4], produces [rank, rank, rank]
+                tt_ranks = [int(model_args.rank) for _ in range(len(model_args.tt_input_dims) - 1)]
+                trainer.model = model_def(trainer.model, tt_ranks, model_args.tt_input_dims, model_args.tt_output_dims)
             elif model_args.exp_name == "fwsvd_ffn":
                 trainer.model = model_def(trainer.model, trainer.get_train_dataloader(), rank=int(model_args.rank), device="cuda:0", use_baseline=model_args.use_baseline, low_rank_method=model_args.low_rank_method)
             else:
@@ -792,7 +790,7 @@ def _mp_fn(index):
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
     #tasks_ = ['stsb', 'cola', 'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
-    tasks_ = ['cola', 'stsb']
+    tasks_ = ['cola', 'stsb', 'sst2', 'mrpc', 'rte', 'wnli']
     main_bench()
     for task_ in tasks_:
         path_to = main(task_)
