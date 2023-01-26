@@ -4,12 +4,12 @@ import torch.nn as nn
 import tntorch as tn
 from math import sqrt
 
-from .forward_backward import forward
+from .forward_backward import forward, einsum_forward
 
 class TTLinear(nn.Module):
     def __init__(self, in_features: int, out_features: int, ranks: List[int], input_dims: List[int],
                  output_dims: List[int], bias: bool = True, device=None, dtype=None,
-                 forward_fn: Callable = forward):
+                 forward_fn: Callable = einsum_forward):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
