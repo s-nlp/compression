@@ -7,3 +7,5 @@ data/MultiRC/*
 data/ReCoRD/*
 data/WiC/*
 data/WSC/*
+__pycache__/
+utils/__pycache__/

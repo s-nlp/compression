@@ -20,11 +20,52 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
-
+from torch.utils.data import Dataset
 from transformers.utils import is_torch_available
 
 
 logger = logging.getLogger(__name__)
+
+
+class SuperGLUEDataset(Dataset):
+    r"""Dataset wrapping tensors modified to work with Trainer.
+
+    Each sample will be retrieved by indexing tensors along the first dimension.
+
+    Args:
+        *tensors (Tensor): tensors that have the same size of the first dimension.
+    """
+
+    def __init__(
+        self, input_ids, attention_masks, token_type_ids, labels, span_cl, spans, guids
+    ) -> None:  # sourcery skip: or-if-exp-identity
+        self.input_ids = input_ids
+        self.attention_masks = attention_masks
+        self.token_type_ids = token_type_ids
+        self.labels = labels
+        if span_cl:
+            self.spans = spans
+        self.guids = guids
+
+    def __getitem__(self, index):
+        if self.spans is not None:
+            return {
+                "input_ids": self.input_ids[index],
+                "attention_mask": self.attention_masks[index],
+                "token_type_ids": self.token_type_ids[index],
+                "label": self.labels[index],
+                "spans": self.spans[index],
+            }
+        else:
+            return {
+                "input_ids": self.input_ids[index],
+                "attention_mask": self.attention_masks[index],
+                "token_type_ids": self.token_type_ids[index],
+                "label": self.labels[index],
+            }
+
+    def __len__(self):
+        return self.input_ids.size(0)
 
 
 @dataclass
@@ -409,12 +450,11 @@ class SingleSentenceClassificationProcessor(DataProcessor):
         if return_tensors is None:
             return features
         elif return_tensors == "pt":
-            return self._extracted_from_get_features_(features)
+            return self.get_tensors(features)
         else:
             raise ValueError("return_tensors should be one of 'tf' or 'pt'")
 
-    # TODO Rename this here and in `get_features`
-    def _extracted_from_get_features_(self, features):
+    def get_tensors(self, features):
         if not is_torch_available():
             raise RuntimeError(
                 "return_tensors set to 'pt' but PyTorch can't be imported"
