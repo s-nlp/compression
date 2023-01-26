@@ -37,24 +37,34 @@ class SuperGLUEDataset(Dataset):
     """
 
     def __init__(
-        self, input_ids, attention_masks, token_type_ids, labels, span_cl, spans, guids
+        self,
+        input_ids,
+        attention_masks,
+        token_type_ids,
+        labels,
+        guids,
+        span_cl,
+        spans=None,
     ) -> None:  # sourcery skip: or-if-exp-identity
+        self.span_cl = False
         self.input_ids = input_ids
         self.attention_masks = attention_masks
         self.token_type_ids = token_type_ids
         self.labels = labels
-        if span_cl:
-            self.spans = spans
         self.guids = guids
+        if span_cl:
+            self.span_cl = True
+            self.spans = spans
 
     def __getitem__(self, index):
-        if self.spans is not None:
+        if self.span_cl:
             return {
                 "input_ids": self.input_ids[index],
                 "attention_mask": self.attention_masks[index],
                 "token_type_ids": self.token_type_ids[index],
                 "label": self.labels[index],
                 "spans": self.spans[index],
+                "guid": self.guids[index],
             }
         else:
             return {
@@ -62,6 +72,7 @@ class SuperGLUEDataset(Dataset):
                 "attention_mask": self.attention_masks[index],
                 "token_type_ids": self.token_type_ids[index],
                 "label": self.labels[index],
+                "guid": self.guids[index],
             }
 
     def __len__(self):

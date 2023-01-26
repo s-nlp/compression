@@ -17,26 +17,17 @@
 
 
 import argparse
-import glob
-import json
 import logging
-import os
 import random
-import time
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
-from torch.utils.data.distributed import DistributedSampler
-from tqdm import tqdm
 from utils.modeling import (
     BertForSpanClassification,
     RobertaForSpanClassification,
     DistilBertForSpanClassification,
 )
 from transformers import (
-    WEIGHTS_NAME,
-    AdamW,
     AutoConfig,
     AutoTokenizer,
     BertConfig,
@@ -48,7 +39,6 @@ from transformers import (
     BertForSequenceClassification,
     RobertaForSequenceClassification,
     DistilBertForSequenceClassification,
-    get_linear_schedule_with_warmup,
     Trainer,
     TrainingArguments,
 )
@@ -57,11 +47,18 @@ from super_glue_data_utils import (
     superglue_convert_examples_to_features as convert_examples_to_features,
     superglue_output_modes as output_modes,
     superglue_processors as processors,
-    superglue_tasks_metrics as task_metrics,
     superglue_tasks_num_spans as task_spans,
 )
 
-from utils.metrics import superglue_compute_metrics as compute_metrics
+from utils.metrics import (
+    boolq_metric,
+    copa_metric,
+    rte_metric,
+    wic_metric,
+    cb_metric,
+    wsc_metric,
+    multirc_metric,
+)
 from utils.data_utils import SuperGLUEDataset
 
 logger = logging.getLogger(__name__)
@@ -104,6 +101,17 @@ TASK2FILENAME = {
     "wsc": "WSC.jsonl",
 }
 
+TASK2METRIC = {
+    "boolq": boolq_metric,
+    "cb": cb_metric,
+    "copa": copa_metric,
+    "multirc": multirc_metric,
+    # "record": record_metric,
+    "rte": rte_metric,
+    "wic": wic_metric,
+    "wsc": wsc_metric,
+}
+
 
 def set_seed(args):
     random.seed(args.seed)
@@ -113,99 +121,80 @@ def set_seed(args):
         torch.cuda.manual_seed_all(args.seed)
 
 
-def load_and_cache_examples(args, task, tokenizer, split="train"):
+def load_examples(args, task, tokenizer, split="train"):
     if args.local_rank not in [-1, 0] and split not in ["dev", "test"]:
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     processor = processors[task]()
     output_mode = output_modes[task]
-    # Load data features from cache or dataset file
-    cached_tensors_file = os.path.join(
-        args.data_dir,
-        f'tensors_{split}_{list(filter(None, args.model_name_or_path.split("/"))).pop()}_{str(args.max_seq_length)}_{str(task)}',
+
+    # no cached tensors, process data from scratch
+    logger.info("Creating features from dataset file at %s", args.data_dir)
+    label_list = processor.get_labels()
+    if split == "dev":
+        get_examples = processor.get_dev_examples
+    elif split == "test":
+        get_examples = processor.get_test_examples
+    elif split == "train":
+        get_examples = processor.get_train_examples
+    examples = get_examples(args.data_dir)
+    features = convert_examples_to_features(
+        examples,
+        tokenizer,
+        label_list=label_list,
+        max_length=args.max_seq_length,
+        output_mode=output_mode,
+        pad_on_left=args.model_type in ["xlnet"],
+        pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
+        pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
     )
 
-    if os.path.exists(cached_tensors_file) and not args.overwrite_cache:
-        logger.info("Loading tensors from cached file %s", cached_tensors_file)
-        start_time = time.time()
-        dataset = torch.load(cached_tensors_file)
-        logger.info("\tFinished loading tensors")
-        logger.info(f"\tin {time.time() - start_time}s")
+    logger.info("\tFinished creating features")
+    if args.local_rank == 0 and split not in ["dev", "train"]:
+        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
+    # Convert to Tensors and build dataset
+    logger.info("Converting features into tensors")
+    all_guids = torch.tensor([f.guid for f in features], dtype=torch.long)
+    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+    all_attention_mask = torch.tensor(
+        [f.attention_mask for f in features], dtype=torch.long
+    )
+    all_token_type_ids = torch.tensor(
+        [f.token_type_ids for f in features], dtype=torch.long
+    )
+    if output_mode in ["classification", "span_classification"]:
+        all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
+    elif output_mode == "regression":
+        all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
+
+    if output_mode in ["span_classification"]:
+        # all_starts = torch.tensor([[s[0] for s in f.span_locs] for f in features], dtype=torch.long)
+        # all_ends = torch.tensor([[s[1] for s in f.span_locs] for f in features], dtype=torch.long)
+        all_spans = torch.tensor([f.span_locs for f in features])
+        dataset = SuperGLUEDataset(
+            input_ids=all_input_ids,
+            attention_masks=all_attention_mask,
+            token_type_ids=all_token_type_ids,
+            labels=all_labels,
+            span_cl=True,
+            spans=all_spans,
+            guids=all_guids,
+        )
     else:
-        # no cached tensors, process data from scratch
-        logger.info("Creating features from dataset file at %s", args.data_dir)
-        label_list = processor.get_labels()
-        if split == "dev":
-            get_examples = processor.get_dev_examples
-        elif split == "test":
-            get_examples = processor.get_test_examples
-        elif split == "train":
-            get_examples = processor.get_train_examples
-        examples = get_examples(args.data_dir)
-        features = convert_examples_to_features(
-            examples,
-            tokenizer,
-            label_list=label_list,
-            max_length=args.max_seq_length,
-            output_mode=output_mode,
-            pad_on_left=args.model_type in ["xlnet"],
-            pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-            pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
+        # print('creating dataset')
+        dataset = SuperGLUEDataset(
+            input_ids=all_input_ids,
+            attention_masks=all_attention_mask,
+            token_type_ids=all_token_type_ids,
+            labels=all_labels,
+            span_cl=False,
+            guids=all_guids,
         )
-
-        logger.info("\tFinished creating features")
-        if args.local_rank == 0 and split not in ["dev", "train"]:
-            torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
-
-        # Convert to Tensors and build dataset
-        logger.info("Converting features into tensors")
-        all_guids = torch.tensor([f.guid for f in features], dtype=torch.long)
-        all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
-        all_attention_mask = torch.tensor(
-            [f.attention_mask for f in features], dtype=torch.long
-        )
-        all_token_type_ids = torch.tensor(
-            [f.token_type_ids for f in features], dtype=torch.long
-        )
-        if output_mode in ["classification", "span_classification"]:
-            all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
-        elif output_mode == "regression":
-            all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
-
-        if output_mode in ["span_classification"]:
-            # all_starts = torch.tensor([[s[0] for s in f.span_locs] for f in features], dtype=torch.long)
-            # all_ends = torch.tensor([[s[1] for s in f.span_locs] for f in features], dtype=torch.long)
-            all_spans = torch.tensor([f.span_locs for f in features])
-            dataset = SuperGLUEDataset(
-                input_ids=all_input_ids,
-                attention_masks=all_attention_mask,
-                token_type_ids=all_token_type_ids,
-                labels=all_labels,
-                span_cl=True,
-                spans=all_spans,
-                guids=all_guids,
-            )
-        else:
-            # print('creating dataset')
-            dataset = SuperGLUEDataset(
-                input_ids=all_input_ids,
-                attention_masks=all_attention_mask,
-                token_type_ids=all_token_type_ids,
-                labels=all_labels,
-                span_cl=False,
-                guids=all_guids,
-            )
-        logger.info("\tFinished converting features into tensors")
-        if args.local_rank in [-1, 0]:
-            logger.info("Saving features into cached file %s", cached_tensors_file)
-            torch.save(dataset, cached_tensors_file)
-            logger.info("\tFinished saving tensors")
-
+    logger.info("\tFinished converting features into tensors")
     if args.task_name != "record" or split not in ["dev", "test"]:
         return dataset
     answers = processor.get_answers(args.data_dir, split)
-    print(dataset[0])
     return dataset, answers
 
 
@@ -513,17 +502,15 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
     model.to(args.device)
 
     if args.do_train:
-        train_dataset = load_and_cache_examples(args, args.task_name, tokenizer)
+        train_dataset = load_examples(args, args.task_name, tokenizer)
 
     if args.do_eval:
         if args.task_name == "record":
-            eval_dataset, eval_answers = load_and_cache_examples(
+            eval_dataset, eval_answers = load_examples(
                 args, args.task_name, tokenizer, split="dev"
             )
         else:
-            eval_dataset = load_and_cache_examples(
-                args, args.task_name, tokenizer, split="dev"
-            )
+            eval_dataset = load_examples(args, args.task_name, tokenizer, split="dev")
             eval_answers = None
 
     train_args = TrainingArguments(
@@ -560,7 +547,7 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
         args=train_args,
         train_dataset=train_dataset if args.do_train else None,
         eval_dataset=eval_dataset if args.do_eval else None,
-        compute_metrics=compute_metrics,
+        compute_metrics=TASK2METRIC[args.task_name],
     )
 
     # Training
@@ -574,13 +561,11 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
     if args.evaluate_test:
 
         if args.task_name == "record":
-            test_dataset, eval_answers = load_and_cache_examples(
+            test_dataset, eval_answers = load_examples(
                 args, args.task_name, tokenizer, split="test"
             )
         else:
-            test_dataset = load_and_cache_examples(
-                args, args.task_name, tokenizer, split="test"
-            )
+            test_dataset = load_examples(args, args.task_name, tokenizer, split="test")
             test_answers = None
 
         trainer.predict(test_dataset)

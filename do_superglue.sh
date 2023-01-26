@@ -1,8 +1,8 @@
 # task_names=(boolq cb copa multirc record wic wsc)
 # task_folders=(BoolQ CB COPA MultiRC ReCoRD WiC WSC)
 
-task_names=(wic)
-task_folders=(WiC)
+task_names=(multirc)
+task_folders=(MultiRC)
 
 export CUDA_VISIBLE_DEVICES=1
 export NVIDIA_VISIBLE_DEVICES=1

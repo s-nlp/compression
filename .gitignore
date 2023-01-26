@@ -9,3 +9,4 @@ data/WiC/*
 data/WSC/*
 __pycache__/
 utils/__pycache__/
+superglue_models/

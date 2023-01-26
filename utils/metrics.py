@@ -8,6 +8,7 @@ from scipy.stats import spearmanr, pearsonr
 from collections import Counter
 from typing import List, Dict
 import numpy as np
+from transformers import EvalPrediction
 
 
 def simple_accuracy(preds: List[int], labels: List[int]) -> float:
@@ -147,3 +148,60 @@ def superglue_compute_metrics(
         return {"f1": avg_f1, "em": avg_em, "em_and_f1": em_and_f1}
     else:
         raise KeyError(task_name)
+
+
+def accuracy_score(p: EvalPrediction):
+    preds_ = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+    preds_ = np.argmax(preds_, axis=1)
+    return {"accuracy": (preds_ == p.label_ids).astype(np.float32).mean().item()}
+
+
+def acc_f1(p: EvalPrediction):
+    preds_ = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+    preds_ = np.argmax(preds_, axis=1)
+    f1 = f1_score(y_true=p.label_ids.astype(np.float32), y_pred=preds_, average="macro")
+    result = accuracy_score(p)
+    result["f1"] = f1
+    return result
+
+
+def boolq_metric(p: EvalPrediction):
+    return accuracy_score(p)
+
+
+def copa_metric(p: EvalPrediction):
+    return accuracy_score(p)
+
+
+def rte_metric(p: EvalPrediction):
+    return accuracy_score(p)
+
+
+def wic_metric(p: EvalPrediction):
+    return accuracy_score(p)
+
+
+def cb_metric(p: EvalPrediction):
+    return acc_f1(p)
+
+
+def wsc_metric(p: EvalPrediction):
+    return acc_f1(p)
+
+
+def multirc_metric(p: EvalPrediction):
+    f1s, ems = [], []
+    preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+    preds = np.argmax(preds, axis=1)
+    print(preds, p.label_ids.astype(np.float32))
+    assert len(preds) == len(p.label_ids)
+    f1 = f1_score(y_true=p.label_ids.astype(np.float32), y_pred=preds)
+    f1s.append(f1)
+    em = int(sum(p == l for p, l in zip(preds, p.label_ids.astype(np.float32))) == len(preds))
+    ems.append(em)
+
+    avg_f1 = sum(f1s) / len(f1s)
+    avg_em = sum(ems) / len(ems)
+    em_and_f1 = (avg_em + avg_f1) / 2
+    print(avg_f1, avg_em, em_and_f1)
+    return {"f1": avg_f1, "em": avg_em, "em_and_f1": em_and_f1}
