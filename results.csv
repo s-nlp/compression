@@ -1,3 +1,5 @@
 model,score,size(MB),SPS,used_cpu,used_cpu_mem,used_gpu,used_gpu_mem,stsb,cola,mnli,mrpc,qnli,qqp,rte,sst2,wnli
-dummy-bert-base-uncased,0.731,417.654,89.096,6.206,2626.0,16.0,1609.0,0.894,0.567,,,,,,,
+dummy-bert-base-uncased,0.752,417.655,86.828,6.197,2624.0,7.5,1609.0,0.895,0.571,,0.892,,,0.686,0.906,0.563
+ttm-checkpointed-bert-base-uncased-rank-10,0.651,202.592,24.494,9.253,2653.0,5.5,1379.0,0.851,0.18,,0.853,,,0.592,0.864,0.563
 ttm-checkpointed-bert-base-uncased-rank-20,0.632,205.288,26.86,6.181,2684.0,12.0,1429.0,0.847,0.132,,0.856,,,0.596,0.869,0.493
+ttm-checkpointed-bert-base-uncased-rank-80,0.619,224.342,13.191,6.191,2696.0,100.0,1601.0,0.854,0.0,,0.848,,,0.585,0.862,0.563
