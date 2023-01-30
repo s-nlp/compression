@@ -35,6 +35,37 @@ logger = logging.getLogger(__name__)
 
 
 class SuperGLUETrainer(Trainer):
+    def compute_loss(self, model, inputs, return_outputs=False):
+        """
+        How the loss is computed by Trainer. By default, all models return the loss in the first element.
+
+        Subclass and override for custom behavior.
+        """
+        if self.label_smoother is not None and "labels" in inputs:
+            labels = inputs.pop("labels")
+        else:
+            labels = None
+
+        outputs = model(
+            **{k: v.to(model.device) for k, v in inputs.items() if k != "guid"}
+        )
+        # Save past state if it exists
+        # TODO: this needs to be fixed and made cleaner later.
+        if self.args.past_index >= 0:
+            self._past = outputs[self.args.past_index]
+        if labels is not None:
+            loss = self.label_smoother(outputs, labels)
+
+        if isinstance(outputs, dict) and "loss" not in outputs:
+            raise ValueError(
+                "The model did not return a loss from the inputs, only the following keys: "
+                f"{','.join(outputs.keys())}. For reference, the inputs it received are {','.join(inputs.keys())}."
+            )
+        # We don't use .loss here since the model may return tuples instead of ModelOutput.
+        loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+
+        return (loss, outputs) if return_outputs else loss
+
     def evaluation_loop(
         self,
         dataloader: DataLoader,
@@ -100,7 +131,10 @@ class SuperGLUETrainer(Trainer):
 
         observed_num_examples = 0
         # Main evaluation loop
+        all_guids = []
         for step, inputs in enumerate(dataloader):
+
+            all_guids.extend(inputs["guid"].squeeze(0).numpy().tolist())
             # Update the observed num examples
             observed_batch_size = find_batch_size(inputs)
             if observed_batch_size is not None:
@@ -270,13 +304,16 @@ class SuperGLUETrainer(Trainer):
         ):
             if args.include_inputs_for_metrics:
                 metrics = self.compute_metrics(
-                    EvalPrediction(
-                        predictions=all_preds, label_ids=all_labels, inputs=all_inputs
+                    SuperGlueEvalPrediction(
+                        predictions=all_preds,
+                        label_ids=all_labels,
+                        inputs=all_inputs,
+                        guids=all_guids,
                     )
                 )
             else:
                 metrics = self.compute_metrics(
-                    EvalPrediction(predictions=all_preds, label_ids=all_labels)
+                    SuperGlueEvalPrediction(predictions=all_preds, label_ids=all_labels)
                 )
         else:
             metrics = {}
@@ -378,4 +415,48 @@ class SuperGLUETrainer(Trainer):
         if len(logits) == 1:
             logits = logits[0]
 
-        return (loss, logits, labels, inputs["guid"])
+        return (loss, logits, labels)
+
+
+class SuperGlueEvalPrediction:
+    """
+    Evaluation output (always contains labels), to be used to compute metrics.
+
+    Parameters:
+        predictions (`np.ndarray`): Predictions of the model.
+        label_ids (`np.ndarray`): Targets to be matched.
+        inputs (`np.ndarray`, *optional*)
+    """
+
+    def __init__(
+        self,
+        predictions: Union[np.ndarray, Tuple[np.ndarray]],
+        label_ids: Union[np.ndarray, Tuple[np.ndarray]],
+        inputs: Optional[Union[np.ndarray, Tuple[np.ndarray]]] = None,
+        guids: Optional[Union[np.ndarray, Tuple[np.ndarray]]] = None,
+    ):
+        self.predictions = predictions
+        self.label_ids = label_ids
+        self.inputs = inputs
+        self.guids = guids
+
+    def __iter__(self):
+        if self.inputs is not None:
+            if self.guids is not None:
+                return iter((self.predictions, self.label_ids, self.inputs, self.guids))
+            else:
+                return iter((self.predictions, self.label_ids, self.inputs))
+        else:
+            return iter((self.predictions, self.label_ids))
+
+    def __getitem__(self, idx):
+        if idx < 0 or idx > 2:
+            raise IndexError("tuple index out of range")
+        if idx == 2 and self.inputs is None:
+            raise IndexError("tuple index out of range")
+        if idx == 0:
+            return self.predictions
+        elif idx == 1:
+            return self.label_ids
+        elif idx == 2:
+            return self.inputs

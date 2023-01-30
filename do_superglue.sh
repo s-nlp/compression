@@ -4,8 +4,8 @@
 task_names=(multirc)
 task_folders=(MultiRC)
 
-export CUDA_VISIBLE_DEVICES=1
-export NVIDIA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=2
+export NVIDIA_VISIBLE_DEVICES=2
 
 for ((i = 0; i < 1; i++)); do
     echo "task_name: ${task_names[i]}, task_folder: data/${task_folders[i]}"
@@ -26,5 +26,5 @@ for ((i = 0; i < 1; i++)); do
         --overwrite_output_dir \
         --log_evaluate_during_training \
         --save_only_best \
-        --evaluate_test
+        --evaluate_test #
 done

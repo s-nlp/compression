@@ -60,6 +60,7 @@ from utils.metrics import (
     multirc_metric,
 )
 from utils.data_utils import SuperGLUEDataset
+from utils.custom_trainer import SuperGLUETrainer
 
 logger = logging.getLogger(__name__)
 
@@ -539,9 +540,11 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
         save_total_limit=args.save_only_best,
         seed=args.seed,
         no_cuda=args.no_cuda,
+        include_inputs_for_metrics=True,
+        remove_unused_columns=False,
     )
 
-    trainer = Trainer(
+    trainer = SuperGLUETrainer(
         model=model,
         # tokenizer=tokenizer,
         args=train_args,
