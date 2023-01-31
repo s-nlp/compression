@@ -1,14 +1,16 @@
 import re
 import string
-from collections import defaultdict
+from collections import Counter, defaultdict
+from typing import Dict, List
 
-from evaluate import load
-from sklearn.metrics import f1_score, matthews_corrcoef
-from scipy.stats import spearmanr, pearsonr
-from collections import Counter
-from typing import List, Dict
 import numpy as np
+from scipy.special import softmax
+from datasets import load_metric
+from scipy.stats import pearsonr, spearmanr
+from sklearn.metrics import f1_score, matthews_corrcoef
 from transformers import EvalPrediction
+
+from .super_glue_data_utils import RecordProcessor
 
 
 def simple_accuracy(preds: List[int], labels: List[int]) -> float:
@@ -27,7 +29,7 @@ def acc_and_f1(
     }
 
 
-def pearson_and_spearman(preds: List[int], labels: List[int]):
+def pearson_and_spearman(preds: List[int], labels: List[int]) -> Dict[str, float]:
     pearson_corr = pearsonr(preds, labels)[0]
     spearman_corr = spearmanr(preds, labels)[0]
     return {
@@ -57,7 +59,7 @@ def normalize_answer(s: str) -> str:
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
 
-def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
+def metric_max_over_ground_truths(metric_fn, prediction, ground_truths) -> int:
     """Compute max metric between prediction and each ground truth.
     From official ReCoRD eval script"""
     scores_for_ground_truths = []
@@ -87,16 +89,16 @@ def _record_em_score(prediction, ground_truth):
     return normalize_answer(prediction) == normalize_answer(ground_truth)
 
 
-def accuracy_score(p: EvalPrediction):
+def accuracy_score(p: EvalPrediction) -> Dict[str, float]:
     preds_ = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
     preds_ = np.argmax(preds_, axis=1)
     return {"accuracy": (preds_ == p.label_ids).astype(np.float32).mean().item()}
 
 
-def acc_f1(p: EvalPrediction):
+def acc_f1(p: EvalPrediction, average: str = "macro") -> Dict[str, float]:
     preds_ = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
     preds_ = np.argmax(preds_, axis=1)
-    f1 = f1_score(y_true=p.label_ids.astype(np.float32), y_pred=preds_, average="macro")
+    f1 = f1_score(y_true=p.label_ids.astype(np.float32), y_pred=preds_, average=average)
     result = accuracy_score(p)
     result["f1"] = f1
     return result
@@ -126,70 +128,30 @@ def wsc_metric(p: EvalPrediction):
     return acc_f1(p)
 
 
-def superglue_compute_metrics(
-    task_name: str, preds: List[int], labels: List[int], guids=None, answers=None
-):
-    assert len(preds) == len(labels)
-    if task_name in ["boolq", "copa", "rte", "wic"]:
-        return {"acc": simple_accuracy(preds, labels)}
-    elif task_name in ["cb", "wsc"]:
-        return acc_and_f1(preds, labels, f1_avg="macro")
-    elif task_name == "multirc":
-        assert len(guids) == len(preds), "Different number of predictions and IDs!"
-        qst2ans = defaultdict(list)
-        # iterate over examples and aggregate statistics
-        for idx, pred, label in zip(guids, preds, labels):
-            qst_idx = f"{idx[0]}-{idx[1]}"
-            qst2ans[qst_idx].append((pred, label))
-
-        f1s, ems = [], []
-        for qst, preds_and_labels in qst2ans.items():
-            preds, labels = zip(*preds_and_labels)
-            f1 = f1_score(y_true=labels, y_pred=preds)
-            f1s.append(f1)
-            em = int(sum([p == l for p, l in preds_and_labels]) == len(preds_and_labels))
-            ems.append(em)
-
-        avg_f1 = sum(f1s) / len(f1s)
-        avg_em = sum(ems) / len(ems)
-        em_and_f1 = (avg_em + avg_f1) / 2
-        return {"f1": avg_f1, "em": avg_em, "em_and_f1": em_and_f1}
-
-    elif task_name == "record":
-        assert len(guids) == len(preds), "Different number of predictions and IDs!"
-        qst2ans = defaultdict(list)
-
-        # iterate over examples and aggregate statistics
-        for idx, pred, label in zip(guids, preds, labels):
-            qst_idx = (idx[0], idx[1])
-            qst2ans[qst_idx].append((idx[2], pred))
-
-        f1s, ems = [], []
-        for qst, idxs_and_prds in qst2ans.items():
-            cands, golds = answers[qst]
-
-            idxs_and_prds.sort(key=lambda x: x[0])
-            logits = np.vstack([i[1] for i in idxs_and_prds])
-
-            # take the most probable choice as the prediction
-            pred_idx = np.softmax(logits, axis=1)[:, -1].argmax().item()
-            pred = cands[pred_idx]
-
-            # compute metrics
-            f1 = metric_max_over_ground_truths(_record_f1_score, pred, golds)
-            em = metric_max_over_ground_truths(_record_em_score, pred, golds)
-            f1s.append(f1)
-            ems.append(em)
-
-        avg_f1 = sum(f1s) / len(f1s)
-        avg_em = sum(ems) / len(ems)
-        em_and_f1 = (avg_em + avg_f1) / 2
-        return {"f1": avg_f1, "em": avg_em, "em_and_f1": em_and_f1}
-    else:
-        raise KeyError(task_name)
-
-
 def multirc_metric(p: EvalPrediction):
+
+    metric = load_metric("super_glue", "multirc")
+    preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+    preds = np.argmax(preds, axis=-1)
+    guids = p.guids
+    labels = p.label_ids.astype(np.float32)
+
+    predictions = [
+        {
+            "idx": {"answer": idx[2], "paragraph": idx[0], "question": idx[1]},
+            "prediction": pred,
+        }
+        for idx, pred in zip(guids, preds)
+    ]
+    result = metric.compute(predictions=predictions, references=labels)
+    print(result)
+
+    return result
+
+
+def record_metric(p: EvalPrediction):
+    processor = RecordProcessor()
+    answers = processor.get_answers("data/ReCoRD/", set_type="dev")
     preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
     preds = np.argmax(preds, axis=-1)
     guids = p.guids
@@ -200,17 +162,23 @@ def multirc_metric(p: EvalPrediction):
 
     # iterate over examples and aggregate statistics
     for idx, pred, label in zip(guids, preds, labels):
-        qst_idx = f"{idx[0]}-{idx[1]}"
-        qst2ans[qst_idx].append((pred, label))
+        qst_idx = (idx[0], idx[1])
+        qst2ans[qst_idx].append((idx[2], pred))
 
     f1s, ems = [], []
+    for qst, idxs_and_prds in qst2ans.items():
+        cands, golds = answers[qst]
 
-    for preds_and_labels in qst2ans.values():
-        preds, labels = zip(*preds_and_labels)
-        f1 = f1_score(y_true=labels, y_pred=preds)
-        f1s.append(f1)
-        em = int(sum(p == l for p, l in preds_and_labels) == len(preds_and_labels))
-        ems.append(em)
+        idxs_and_prds.sort(key=lambda x: x[0])
+        logits = np.vstack([i[1] for i in idxs_and_prds])
+
+        # take the most probable choice as the prediction
+        pred_idx = np.argmax(softmax(logits, axis=1)[:, -1]).item()
+        pred = cands[pred_idx]
+
+        # compute metrics
+        f1s.append(metric_max_over_ground_truths(_record_f1_score, pred, golds))
+        ems.append(metric_max_over_ground_truths(_record_em_score, pred, golds))
 
     avg_f1 = sum(f1s) / len(f1s)
     avg_em = sum(ems) / len(ems)

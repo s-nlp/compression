@@ -1,35 +1,20 @@
-import json
 import logging
-import os
-import random
-import re
-import shutil
-import time
-from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from transformers import AdamW, PreTrainedModel, Trainer, get_linear_schedule_with_warmup
+from transformers import Trainer
 from transformers.trainer_pt_utils import (
     IterableDatasetShard,
     find_batch_size,
     nested_concat,
     nested_detach,
     nested_numpify,
-    torch_pad_and_concatenate,
     nested_truncate,
 )
-from transformers.trainer_utils import (
-    PREFIX_CHECKPOINT_DIR,
-    EvalLoopOutput,
-    PredictionOutput,
-    EvalPrediction,
-    has_length,
-    denumpify_detensorize,
-)
+from transformers.trainer_utils import EvalLoopOutput, denumpify_detensorize, has_length
 
 logger = logging.getLogger(__name__)
 
@@ -404,7 +389,6 @@ class SuperGLUETrainer(Trainer):
                     logits = tuple(v for k, v in outputs.items() if k not in ignore_keys)
                 else:
                     logits = outputs
-                # TODO: this needs to be fixed and made cleaner later.
                 if self.args.past_index >= 0:
                     self._past = outputs[self.args.past_index - 1]
 

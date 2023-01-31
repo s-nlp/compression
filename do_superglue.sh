@@ -1,8 +1,8 @@
 # task_names=(boolq cb copa multirc record wic wsc)
 # task_folders=(BoolQ CB COPA MultiRC ReCoRD WiC WSC)
 
-task_names=(multirc)
-task_folders=(MultiRC)
+task_names=(record)
+task_folders=(ReCoRD)
 
 export CUDA_VISIBLE_DEVICES=2
 export NVIDIA_VISIBLE_DEVICES=2
@@ -15,16 +15,17 @@ for ((i = 0; i < 1; i++)); do
         --model_name_or_path bert-base-uncased \
         --task_name ${task_names[i]} \
         --output_dir logs/ \
-        --do_train \
+        \
         --do_eval \
-        --per_gpu_train_batch_size 32 \
-        --per_gpu_eval_batch_size 32 \
+        --per_gpu_train_batch_size 16 \
+        --per_gpu_eval_batch_size 8 \
         --learning_rate 5e-5 \
         --num_train_epochs 3 \
+        --gradient_accumulation_steps 3 \
         --seed 42 \
         --output_dir superglue_models/bert-base-uncased/${task_names[i]} \
         --overwrite_output_dir \
         --log_evaluate_during_training \
-        --save_only_best \
-        --evaluate_test #
+        --save_only_best # --do_train \
+    # --evaluate_test #
 done

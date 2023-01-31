@@ -213,7 +213,7 @@ def superglue_convert_examples_to_features(
                 )
 
                 # TODO(AW): assumption is same number of non-special tokens + sos + eos
-                #   This handles varying number of intervening tokens (e.g. different models)
+                # This handles varying number of intervening tokens (e.g. different models)
                 inputs = tokenizer.encode_plus(
                     example.text_a,
                     example.text_b,
@@ -281,15 +281,15 @@ def superglue_convert_examples_to_features(
             )
             token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
 
-        assert len(input_ids) == max_length, "Error with input length {} vs {}".format(
-            len(input_ids), max_length
-        )
+        assert (
+            len(input_ids) == max_length
+        ), f"Error with input length {len(input_ids)} vs {max_length}"
         assert (
             len(attention_mask) == max_length
-        ), "Error with input length {} vs {}".format(len(attention_mask), max_length)
+        ), f"Error with input length {len(attention_mask)} vs {max_length}"
         assert (
             len(token_type_ids) == max_length
-        ), "Error with input length {} vs {}".format(len(token_type_ids), max_length)
+        ), f"Error with input length {len(token_type_ids)} vs {max_length}"
         if output_mode in ["classification", "span_classification"]:
             label = label_map[example.label]
         elif output_mode == "regression":
@@ -655,7 +655,7 @@ class RecordProcessor(DataProcessor):
         """ """
         if self._answers is None or set_type not in self._answers:
             self._answers = {set_type: {}}
-            data_file = f"{set_type}.jsonl"
+            data_file = f"{set_type if set_type in ['train', 'test'] else 'val'}.jsonl"
             data = self._read_jsonl(os.path.join(data_dir, data_file))
             for line in data:
                 passage_id = line["idx"]

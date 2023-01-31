@@ -22,45 +22,44 @@ import random
 
 import numpy as np
 import torch
-from utils.modeling import (
-    BertForSpanClassification,
-    RobertaForSpanClassification,
-    DistilBertForSpanClassification,
-)
 from transformers import (
     AutoConfig,
     AutoTokenizer,
     BertConfig,
-    DistilBertConfig,
-    RobertaConfig,
-    BertTokenizer,
-    RobertaTokenizer,
-    DistilBertTokenizer,
     BertForSequenceClassification,
-    RobertaForSequenceClassification,
+    BertTokenizer,
+    DistilBertConfig,
     DistilBertForSequenceClassification,
+    DistilBertTokenizer,
+    RobertaConfig,
+    RobertaForSequenceClassification,
+    RobertaTokenizer,
     Trainer,
     TrainingArguments,
 )
-
-from super_glue_data_utils import (
-    superglue_convert_examples_to_features as convert_examples_to_features,
-    superglue_output_modes as output_modes,
-    superglue_processors as processors,
-    superglue_tasks_num_spans as task_spans,
-)
-
+from utils.custom_trainer import SuperGLUETrainer
+from utils.data_utils import SuperGLUEDataset
 from utils.metrics import (
     boolq_metric,
+    cb_metric,
     copa_metric,
+    multirc_metric,
+    record_metric,
     rte_metric,
     wic_metric,
-    cb_metric,
     wsc_metric,
-    multirc_metric,
 )
-from utils.data_utils import SuperGLUEDataset
-from utils.custom_trainer import SuperGLUETrainer
+from utils.modeling import (
+    BertForSpanClassification,
+    DistilBertForSpanClassification,
+    RobertaForSpanClassification,
+)
+from utils.super_glue_data_utils import (
+    superglue_convert_examples_to_features as convert_examples_to_features,
+)
+from utils.super_glue_data_utils import superglue_output_modes as output_modes
+from utils.super_glue_data_utils import superglue_processors as processors
+from utils.super_glue_data_utils import superglue_tasks_num_spans as task_spans
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +106,7 @@ TASK2METRIC = {
     "cb": cb_metric,
     "copa": copa_metric,
     "multirc": multirc_metric,
-    # "record": record_metric,
+    "record": record_metric,
     "rte": rte_metric,
     "wic": wic_metric,
     "wsc": wsc_metric,
@@ -564,7 +563,7 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
     if args.evaluate_test:
 
         if args.task_name == "record":
-            test_dataset, eval_answers = load_examples(
+            test_dataset, _ = load_examples(
                 args, args.task_name, tokenizer, split="test"
             )
         else:
