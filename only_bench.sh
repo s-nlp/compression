@@ -1,4 +1,4 @@
-!python synthetic_benchmark.py \
+python synthetic_benchmark.py \
 				--model_name_or_path 'gpt2'  \
 				--run_name 'gpt2-full' \
 				--comp_func 'none' \

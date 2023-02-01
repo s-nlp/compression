@@ -34,7 +34,7 @@ def unstructured_pruning(model):
     model = uns_prune(model, 0.6)
     return model
 
-def simple_svd_model(model, rank = 150):
+def simple_svd_model(model, rank = 150, *args, **kwargs):
     model = simple_svd_func(model, rank)
     return model
 
