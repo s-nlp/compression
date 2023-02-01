@@ -1,0 +1,13 @@
+{
+    "eval_loss": 0.4970703125,
+    "eval_matthews_correlation": 0.5520601255693537,
+    "eval_runtime": 0.9672,
+    "eval_samples": 1043,
+    "eval_samples_per_second": 1078.41,
+    "eval_steps_per_second": 17.577,
+    "size_of": 138593300,
+    "used_cpu": 5.49,
+    "used_cpumem": 3176,
+    "used_gpu": 38.5,
+    "used_gpumem": 3683.75
+}
