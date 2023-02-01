@@ -1,0 +1,1 @@
+from .ttm_linear import FactorizationTTMLinear as TTMLinear
