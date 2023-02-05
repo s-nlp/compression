@@ -6,6 +6,8 @@ def ttm_compress_bert_ffn(model, ranks, input_dims, output_dims):
         encoder = model.bert.encoder
     elif hasattr(model, "encoder"):
         encoder = model.encoder
+    elif hasattr(model.model, "encoder"):
+        encoder = model.model.encoder
     else:
         raise ValueError("Expected model to have attribute 'encoder' or 'bert.encoder'.")
 
@@ -23,3 +25,4 @@ def ttm_compress_bert_ffn(model, ranks, input_dims, output_dims):
         layer.output.dense = tt_weight
 
     return model
+ 

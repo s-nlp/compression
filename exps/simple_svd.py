@@ -22,11 +22,12 @@ def our_svd(model_to, svd_rank=51):
     for i in range(model_to.config.num_hidden_layers):
         bias = model_to.bert.encoder.layer[i].intermediate.dense.bias
         U, S, Vt = torch.linalg.svd(
-            model_to.bert.encoder.layer[i].intermediate.dense.weight, full_matrices=False
+            model_to.bert.encoder.layer[i].intermediate.dense.weight,
+            full_matrices=False,
         )
         # truncate SVD and fuse Sigma matrix
-        w1 = torch.mm(torch.diag(torch.sqrt(S[0:svd_rank])), Vt[0:svd_rank, :])
-        w2 = torch.mm(U[:, 0:svd_rank], torch.diag(torch.sqrt(S[0:svd_rank])))
+        w1 = torch.mm(torch.diag(torch.sqrt(S[:svd_rank])), Vt[0:svd_rank, :])
+        w2 = torch.mm(U[:, 0:svd_rank], torch.diag(torch.sqrt(S[:svd_rank])))
 
         model_to.bert.encoder.layer[i].intermediate.dense = SVD_dec(
             model_to.config.hidden_size, model_to.config.intermediate_size, svd_rank
@@ -45,8 +46,8 @@ def our_svd(model_to, svd_rank=51):
             model_to.bert.encoder.layer[i].output.dense.weight, full_matrices=False
         )
         # truncate SVD and fuse Sigma matrix
-        w1 = torch.mm(torch.diag(torch.sqrt(S[0:svd_rank])), Vt[0:svd_rank, :])
-        w2 = torch.mm(U[:, 0:svd_rank], torch.diag(torch.sqrt(S[0:svd_rank])))
+        w1 = torch.mm(torch.diag(torch.sqrt(S[:svd_rank])), Vt[0:svd_rank, :])
+        w2 = torch.mm(U[:, 0:svd_rank], torch.diag(torch.sqrt(S[:svd_rank])))
 
         model_to.bert.encoder.layer[i].output.dense = SVD_dec(
             model_to.config.intermediate_size, model_to.config.hidden_size, svd_rank
@@ -96,7 +97,6 @@ def w_svd_func(
         model_to.bert.encoder.layer[i].intermediate.dense.lin0.weight.data.copy_(w1)
         model_to.bert.encoder.layer[i].intermediate.dense.lin2.weight.data.copy_(w2)
         model_to.bert.encoder.layer[i].intermediate.dense.lin2.bias.data.copy_(bias)
-
     for i in range(model_to.config.num_hidden_layers):
         if weight_out is not None:
             weight_out_ = weight_out[i].sum(1)
@@ -159,7 +159,6 @@ def w_svd_func_inv(
         model_to.bert.encoder.layer[i].intermediate.dense.lin0.weight.data.copy_(w1)
         model_to.bert.encoder.layer[i].intermediate.dense.lin2.weight.data.copy_(w2)
         model_to.bert.encoder.layer[i].intermediate.dense.lin2.bias.data.copy_(bias)
-
     for i in range(model_to.config.num_hidden_layers):
         if weight_out is not None:
             weight_out_ = weight_out[i].sum(0)

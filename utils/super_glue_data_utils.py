@@ -32,7 +32,6 @@ from utils.data_utils import (
     SpanClassificationFeatures,
 )
 
-
 if is_torch_available():
     import torch
 
@@ -125,7 +124,7 @@ def tokenize_and_encode_spans_wic(tokenizer, text, spans):
     # get the end position of the span in the encoded text
     encoded_span_end = encoded_span_start + encoded_text_inside_span_length
 
-    # concatenate the encoded text before the span, the encoded text inside the span, and the encoded text after the span
+    # encode all text
     encoded_text = tokenizer.encode_plus(text, return_token_type_ids=True)
 
     # return the encoded text and the (start, end) tuple indicating the location of a span in the encoded text
@@ -296,22 +295,6 @@ def superglue_convert_examples_to_features(
             label = float(example.label)
         else:
             raise KeyError(output_mode)
-
-        # if ex_index < 5:
-        #     logger.info("*** Example ***")
-        #     logger.info("guid: %s" % (example.guid))
-        #     logger.info(
-        #         "input text: %s"
-        #         % tokenizer.decode(input_ids, clean_up_tokenization_spaces=False)
-        #     )
-        #     logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-        #     logger.info(
-        #         "attention_mask: %s" % " ".join([str(x) for x in attention_mask])
-        #     )
-        #     logger.info(
-        #         "token_type_ids: %s" % " ".join([str(x) for x in token_type_ids])
-        #     )
-        #     logger.info("label: %s (id = %d)" % (example.label, label))
 
         if isinstance(example, SpanClassificationExample):
             feats = SpanClassificationFeatures(
@@ -1064,7 +1047,7 @@ superglue_tasks_num_labels = {
 
 superglue_tasks_num_spans = {
     "wic": 2,
-    "wsc": 2,
+    "wsc": 1,
 }
 
 superglue_processors = {

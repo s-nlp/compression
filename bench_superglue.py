@@ -52,7 +52,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from super_glue_data_utils import (
+from utils.super_glue_data_utils import (
     superglue_convert_examples_to_features as convert_examples_to_features,
     superglue_output_modes as output_modes,
     superglue_processors as processors,
@@ -60,7 +60,7 @@ from super_glue_data_utils import (
     superglue_tasks_num_spans as task_spans,
 )
 
-from utils.metrics import superglue_compute_metrics as compute_metrics
+from datasets import load_metric
 
 logger = logging.getLogger(__name__)
 
@@ -490,9 +490,8 @@ def evaluate(args, task_name, model, tokenizer, split="dev", prefix="", use_tqdm
     if split != "test":
         # don't have access to test labels, so skip evaluating on them
         # NB(AW): forcing evaluation on ReCoRD on test (no labels) will error
-        result = compute_metrics(
-            task_name, preds, out_label_ids, guids=ex_ids, answers=eval_answers
-        )
+        metric = load_metric("super_glue", args.task_name)
+        result = metric.compute(predictions=preds, references=out_label_ids)
         results |= result
         output_eval_file = os.path.join(args.output_dir, prefix, "eval_results.txt")
         # K O C T bI Jl b
@@ -519,79 +518,68 @@ def load_and_cache_examples(args, task, tokenizer, split="train"):
         f'tensors_{split}_{list(filter(None, args.model_name_or_path.split("/"))).pop()}_{str(args.max_seq_length)}_{str(task)}',
     )
 
-    if os.path.exists(cached_tensors_file) and not args.overwrite_cache:
-        logger.info("Loading tensors from cached file %s", cached_tensors_file)
-        start_time = time.time()
-        dataset = torch.load(cached_tensors_file)
-        logger.info("\tFinished loading tensors")
-        logger.info(f"\tin {time.time() - start_time}s")
+    # no cached tensors, process data from scratch
+    logger.info("Creating features from dataset file at %s", args.data_dir)
+    label_list = processor.get_labels()
+    if split == "dev":
+        get_examples = processor.get_dev_examples
+    elif split == "test":
+        get_examples = processor.get_test_examples
+    elif split == "train":
+        get_examples = processor.get_train_examples
+    examples = get_examples(args.data_dir)
+    print('EXAMPLES:', examples[0])
+    features = convert_examples_to_features(
+        examples,
+        tokenizer,
+        label_list=label_list,
+        max_length=args.max_seq_length,
+        output_mode=output_mode,
+        pad_on_left=args.model_type in ["xlnet"],
+        pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
+        pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
+    )
+    logger.info("\tFinished creating features")
+    if args.local_rank == 0 and split not in ["dev", "train"]:
+        torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
+    # Convert to Tensors and build dataset
+    logger.info("Converting features into tensors")
+    all_guids = torch.tensor([f.guid for f in features], dtype=torch.long)
+    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+    all_attention_mask = torch.tensor(
+        [f.attention_mask for f in features], dtype=torch.long
+    )
+    all_token_type_ids = torch.tensor(
+        [f.token_type_ids for f in features], dtype=torch.long
+    )
+    if output_mode in ["classification", "span_classification"]:
+        all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
+    elif output_mode == "regression":
+        all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
+
+    if output_mode in ["span_classification"]:
+        # all_starts = torch.tensor([[s[0] for s in f.span_locs] for f in features], dtype=torch.long)
+        # all_ends = torch.tensor([[s[1] for s in f.span_locs] for f in features], dtype=torch.long)
+        all_spans = torch.tensor([f.span_locs for f in features])
+        print(all_input_ids.shape, all_labels.shape, all_spans.shape)
+        dataset = TensorDataset(
+            all_input_ids,
+            all_attention_mask,
+            all_token_type_ids,
+            all_labels,
+            all_spans,
+            all_guids,
+        )
     else:
-        # no cached tensors, process data from scratch
-        logger.info("Creating features from dataset file at %s", args.data_dir)
-        label_list = processor.get_labels()
-        if split == "dev":
-            get_examples = processor.get_dev_examples
-        elif split == "test":
-            get_examples = processor.get_test_examples
-        elif split == "train":
-            get_examples = processor.get_train_examples
-        examples = get_examples(args.data_dir)
-        features = convert_examples_to_features(
-            examples,
-            tokenizer,
-            label_list=label_list,
-            max_length=args.max_seq_length,
-            output_mode=output_mode,
-            pad_on_left=args.model_type in ["xlnet"],
-            pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-            pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
+        dataset = TensorDataset(
+            all_input_ids,
+            all_attention_mask,
+            all_token_type_ids,
+            all_labels,
+            all_guids,
         )
-
-        logger.info("\tFinished creating features")
-        if args.local_rank == 0 and split not in ["dev", "train"]:
-            torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
-
-        # Convert to Tensors and build dataset
-        logger.info("Converting features into tensors")
-        all_guids = torch.tensor([f.guid for f in features], dtype=torch.long)
-        all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
-        all_attention_mask = torch.tensor(
-            [f.attention_mask for f in features], dtype=torch.long
-        )
-        all_token_type_ids = torch.tensor(
-            [f.token_type_ids for f in features], dtype=torch.long
-        )
-        if output_mode in ["classification", "span_classification"]:
-            all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
-        elif output_mode == "regression":
-            all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
-
-        if output_mode in ["span_classification"]:
-            # all_starts = torch.tensor([[s[0] for s in f.span_locs] for f in features], dtype=torch.long)
-            # all_ends = torch.tensor([[s[1] for s in f.span_locs] for f in features], dtype=torch.long)
-            all_spans = torch.tensor([f.span_locs for f in features])
-            dataset = TensorDataset(
-                all_input_ids,
-                all_attention_mask,
-                all_token_type_ids,
-                all_labels,
-                all_spans,
-                all_guids,
-            )
-        else:
-            dataset = TensorDataset(
-                all_input_ids,
-                all_attention_mask,
-                all_token_type_ids,
-                all_labels,
-                all_guids,
-            )
-        logger.info("\tFinished converting features into tensors")
-        if args.local_rank in [-1, 0]:
-            logger.info("Saving features into cached file %s", cached_tensors_file)
-            torch.save(dataset, cached_tensors_file)
-            logger.info("\tFinished saving tensors")
+    logger.info("\tFinished converting features into tensors")
 
     if args.task_name != "record" or split not in ["dev", "test"]:
         return dataset

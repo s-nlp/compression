@@ -11,7 +11,8 @@ from transformers import (
     DistilBertPreTrainedModel,
     RobertaConfig,
     RobertaModel,
-    RobertaPreTrainedModel
+    RobertaPreTrainedModel,
+    RobertaForMaskedLM,
 )
 
 
@@ -351,3 +352,6 @@ class RobertaForSpanClassification(RobertaPreTrainedModel):
             outputs = (loss,) + outputs
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
+
+
+# class DistilRobertaForSpanClassification(RobertaForMaskedLM)

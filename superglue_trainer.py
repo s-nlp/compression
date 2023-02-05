@@ -18,10 +18,14 @@
 
 import argparse
 import logging
+import os
+import pickle
 import random
+import warnings
 
 import numpy as np
 import torch
+import wandb
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -34,10 +38,12 @@ from transformers import (
     RobertaConfig,
     RobertaForSequenceClassification,
     RobertaTokenizer,
-    Trainer,
     TrainingArguments,
 )
-from utils.custom_trainer import SuperGLUETrainer
+from transformers import logging as trlogging
+
+from exps.models import MODEL_NAMES
+from utils.custom_trainer import SuperGlueTrainer, SuperGlueTrainerBasic
 from utils.data_utils import SuperGLUEDataset
 from utils.metrics import (
     boolq_metric,
@@ -172,6 +178,7 @@ def load_examples(args, task, tokenizer, split="train"):
         # all_starts = torch.tensor([[s[0] for s in f.span_locs] for f in features], dtype=torch.long)
         # all_ends = torch.tensor([[s[1] for s in f.span_locs] for f in features], dtype=torch.long)
         all_spans = torch.tensor([f.span_locs for f in features])
+        print(all_labels.shape, all_spans.shape)
         dataset = SuperGLUEDataset(
             input_ids=all_input_ids,
             attention_masks=all_attention_mask,
@@ -423,6 +430,36 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
     parser.add_argument(
         "--server_port", type=str, default="", help="For distant debugging."
     )
+
+    parser.add_argument(
+        "--ignore_mismatched_sizes",
+        action="store_true",
+        help="Will enable to load a pretrained model whose head dimensions are different.",
+    )
+
+    parser.add_argument(
+        "--comp_func",
+        type=str,
+        help="Compression function to be used on finetuned model",
+        default=None,
+    )
+    parser.add_argument("--rank", type=int, default=150, help="Rank size to compress.")
+    parser.add_argument(
+        "--double_train", action="store_true", help="train model after compression"
+    )
+    # parser.add_argument("--tt_ranks", type=)
+    # tt_ranks: Tuple[int, ...] = field(
+    #     default=(10,10,10),
+    #     metadata={"help": "Ranks of TTm decomposition of weights"}
+    # )
+    # tt_input_dims: Tuple[int, ...] = field(
+    #     default=(4,6,8,4),
+    #     metadata={"help": "Input dimensions in TTMatrix representation of weights"}
+    # )
+    # tt_output_dims: Tuple[int, ...] = field(
+    #     default=(8,8,6,8),
+    #     metadata={"help": "Output dimensions in TTMatrix representation of weights"}
+    # )
     args = parser.parse_args()
 
     # Setup logging
@@ -503,22 +540,21 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
 
     if args.do_train:
         train_dataset = load_examples(args, args.task_name, tokenizer)
+        print(train_dataset[0])
 
     if args.do_eval:
         if args.task_name == "record":
-            eval_dataset, eval_answers = load_examples(
-                args, args.task_name, tokenizer, split="dev"
-            )
+            eval_dataset, _ = load_examples(args, args.task_name, tokenizer, split="dev")
+            print(eval_dataset[0])
         else:
             eval_dataset = load_examples(args, args.task_name, tokenizer, split="dev")
-            eval_answers = None
 
     train_args = TrainingArguments(
-        output_dir=args.output_dir,
+        output_dir=f"{args.output_dir}/{args.model_name_or_path}_{args.comp_func}_{args.rank}/{args.task_name}",
         overwrite_output_dir=args.overwrite_output_dir or False,
         do_train=args.do_train,
         do_eval=args.do_eval,
-        evaluation_strategy="epoch",
+        evaluation_strategy="steps",
         do_predict=args.evaluate_test or False,
         per_device_train_batch_size=args.per_gpu_train_batch_size,
         per_device_eval_batch_size=args.per_gpu_eval_batch_size,
@@ -541,36 +577,105 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
         no_cuda=args.no_cuda,
         include_inputs_for_metrics=True,
         remove_unused_columns=False,
+        load_best_model_at_end=True,
+        report_to="wandb",
+        run_name=f"{args.model_name_or_path}_{args.comp_func}_{args.rank}_{args.task_name}",
     )
 
-    trainer = SuperGLUETrainer(
-        model=model,
-        # tokenizer=tokenizer,
-        args=train_args,
-        train_dataset=train_dataset if args.do_train else None,
-        eval_dataset=eval_dataset if args.do_eval else None,
-        compute_metrics=TASK2METRIC[args.task_name],
-    )
+    if args.comp_func in ("svd_ffn_w_inv", "svd_ffn_w"):
+        trainer = SuperGlueTrainer(
+            model=model,
+            # tokenizer=tokenizer,
+            args=train_args,
+            train_dataset=train_dataset if args.do_train else None,
+            eval_dataset=eval_dataset if args.do_eval else None,
+            compute_metrics=TASK2METRIC[args.task_name],
+        )
+
+        trainer.make_grad_bank(model)
+
+    else:
+        trainer = SuperGlueTrainerBasic(
+            model=model,
+            # tokenizer=tokenizer,
+            args=train_args,
+            train_dataset=train_dataset if args.do_train else None,
+            eval_dataset=eval_dataset if args.do_eval else None,
+            compute_metrics=TASK2METRIC[args.task_name],
+        )
 
     # Training
     if args.do_train:
-        trainer.train()
+        trainer.model.to("cuda")
+        train_result = trainer.train()
+        metrics = train_result.metrics
+        metrics["train_samples"] = len(train_dataset)
+        if train_args.save_strategy != "no":
+            trainer.save_model()  # Saves the tokenizer too for easy upload
+            trainer.log_metrics("train", metrics)
+            trainer.save_metrics("train", metrics)
+            trainer.save_state()
+
+            if args.comp_func in ("svd_ffn_w_inv", "svd_ffn_w"):
+                full_dict = {"weight_int": [], "weight_out": [], "weight_count": 0}
+                full_dict["weight_int"] = trainer.grad_bank_int_2
+                full_dict["weight_out"] = trainer.grad_bank_out_2
+                full_dict["weight_count"] = trainer.avg_counter
+
+                with open(
+                    os.path.join(trainer.args.output_dir, "weight_dict.pickle"), "wb"
+                ) as handle:
+                    pickle.dump(full_dict, handle)
 
     # Evaluation
     if args.do_eval:
-        trainer.evaluate()
+        logger.info("***** Evaluate *****")
+
+        eval_result = trainer.evaluate()
+        trainer.save_metrics("eval", eval_result)
+        logger.info(eval_result)
 
     if args.evaluate_test:
-
         if args.task_name == "record":
             test_dataset, _ = load_examples(
                 args, args.task_name, tokenizer, split="test"
             )
         else:
             test_dataset = load_examples(args, args.task_name, tokenizer, split="test")
-            test_answers = None
 
         trainer.predict(test_dataset)
+
+    if args.comp_func not in ("none", None):
+        class_module = __import__("exps.models", fromlist=[MODEL_NAMES[args.comp_func]])
+        model_def = getattr(class_module, MODEL_NAMES[args.comp_func])
+        if args.comp_func == "ttm_ffn":
+            trainer.model = model_def(
+                trainer.model, (10, 10, 10), (4, 6, 8, 4), (8, 8, 6, 8)
+            )
+        elif args.comp_func == "svd_ffn":
+            trainer.model = model_def(trainer.model, args.rank)
+        elif args.comp_func == "our_svd":
+            trainer.model = model_def(trainer.model, args.rank)
+        trainer.model.to("cuda")
+        eval_result = trainer.evaluate()
+        trainer.save_metrics("eval", eval_result)
+        logger.info(eval_result)
+
+    if args.double_train:
+        logger.info("*** Second train loop ***")
+        trainer2 = SuperGlueTrainerBasic(
+            model=trainer.model,
+            args=train_args,
+            train_dataset=train_dataset if args.do_train else None,
+            eval_dataset=eval_dataset if args.do_eval else None,
+            compute_metrics=TASK2METRIC[args.task_name],
+            tokenizer=tokenizer,
+        )
+        trainer2.train()
+        logger.info("*** Evaluate after retraining ***")
+        eval_result = trainer2.evaluate(eval_dataset=eval_dataset)
+        trainer2.log_metrics("eval", eval_result)
+        trainer2.save_metrics("eval", eval_result)
 
 
 if __name__ == "__main__":

@@ -159,12 +159,12 @@ def record_metric(p: EvalPrediction):
 
     assert len(guids) == len(preds), "Different number of predictions and IDs!"
     qst2ans = defaultdict(list)
-
+    # print(preds, labels, guids)
     # iterate over examples and aggregate statistics
     for idx, pred, label in zip(guids, preds, labels):
         qst_idx = (idx[0], idx[1])
         qst2ans[qst_idx].append((idx[2], pred))
-
+    # print(qst2ans)
     f1s, ems = [], []
     for qst, idxs_and_prds in qst2ans.items():
         cands, golds = answers[qst]

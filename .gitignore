@@ -5,8 +5,15 @@ data/CB/*
 data/COPA/*
 data/MultiRC/*
 data/ReCoRD/*
+data/ReCoRD_small/*
 data/WiC/*
 data/WSC/*
 __pycache__/
 utils/__pycache__/
 superglue_models/
+.vscode/
+wandb/
+test.sh
+utils/test.ipynb
+do_superglue2.sh
+do_superglue3.sh

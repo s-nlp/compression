@@ -80,11 +80,12 @@ def lobert_self_svd(model, rank=150):
     return model
 
 
-def lobert_self_ffn(model):
+def lobert_self_ffn(model, rank):
     model = lobert_student(
         model.config,
         model,
         student_mode="ffn_svd",
         num_hidden_layers=model.config.num_hidden_layers,
+        rank=rank
     )
     return model
