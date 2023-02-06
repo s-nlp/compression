@@ -24,13 +24,8 @@ from collections import defaultdict
 import numpy as np
 from transformers.utils import is_torch_available
 
-from utils.data_utils import (
-    DataProcessor,
-    InputExample,
-    InputFeatures,
-    SpanClassificationExample,
-    SpanClassificationFeatures,
-)
+from .data_utils import (DataProcessor, InputExample, InputFeatures,
+                         SpanClassificationExample, SpanClassificationFeatures)
 
 if is_torch_available():
     import torch
@@ -193,6 +188,7 @@ def superglue_convert_examples_to_features(
                 inputs_a, span_locs_a = tokenize_tracking_span(
                     tokenizer, example.text_a, example.spans_a
                 )
+                # print("span_locs_a", span_locs_a)
             else:
                 inputs_a, span_locs_a = tokenize_and_encode_spans_wic(
                     tokenizer, example.text_a, example.spans_a
@@ -1047,7 +1043,7 @@ superglue_tasks_num_labels = {
 
 superglue_tasks_num_spans = {
     "wic": 2,
-    "wsc": 1,
+    "wsc": 2,
 }
 
 superglue_processors = {

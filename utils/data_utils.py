@@ -20,9 +20,10 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
+
+import torch
 from torch.utils.data import Dataset
 from transformers.utils import is_torch_available
-
 
 logger = logging.getLogger(__name__)
 
@@ -30,21 +31,38 @@ logger = logging.getLogger(__name__)
 class SuperGLUEDataset(Dataset):
     r"""Dataset wrapping tensors modified to work with Trainer.
 
-    Each sample will be retrieved by indexing tensors along the first dimension.
-
     Args:
-        *tensors (Tensor): tensors that have the same size of the first dimension.
+        input_ids (Tensor): Tensor of input_ids.
+        attention_masks (Tensor): Tensor of attention_masks.
+        token_type_ids (Tensor): Tensor of token_type_ids.
+        labels (Tensor): Tensor of labels.
+        guids (Tensor): Tensor of guids.
+        span_cl (bool): Flag indicating whether spans are included.
+        spans (Tensor, optional): Tensor of spans. Only provided if `span_cl` is `True`.
+
+    Example:
+        >>> dataset = SuperGLUEDataset(input_ids, attention_masks, token_type_ids, labels, guids, span_cl, spans)
+        >>> sample = dataset[0]
+        >>> print(sample)
+        {
+            "input_ids": tensor([...], dtype=torch.int64),
+            "attention_mask": tensor([...], dtype=torch.int64),
+            "token_type_ids": tensor([...], dtype=torch.int64),
+            "label": tensor([...], dtype=torch.int64),
+            "spans": tensor([...], dtype=torch.int64), # Only included if `span_cl` is `True`
+            "guid": tensor([...], dtype=torch.int64),
+        }
     """
 
     def __init__(
         self,
-        input_ids,
-        attention_masks,
-        token_type_ids,
-        labels,
-        guids,
-        span_cl,
-        spans=None,
+        input_ids: torch.Tensor,
+        attention_masks: torch.Tensor,
+        token_type_ids: torch.Tensor,
+        labels: torch.Tensor,
+        guids: torch.Tensor,
+        span_cl: bool,
+        spans: Optional["Tensor"] = None,
     ) -> None:  # sourcery skip: or-if-exp-identity
         self.span_cl = False
         self.input_ids = input_ids
@@ -56,24 +74,17 @@ class SuperGLUEDataset(Dataset):
             self.span_cl = True
             self.spans = spans
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> dict:
+        sample = {
+            "input_ids": self.input_ids[index],
+            "attention_mask": self.attention_masks[index],
+            "token_type_ids": self.token_type_ids[index],
+            "label": self.labels[index],
+            "guid": self.guids[index],
+        }
         if self.span_cl:
-            return {
-                "input_ids": self.input_ids[index],
-                "attention_mask": self.attention_masks[index],
-                "token_type_ids": self.token_type_ids[index],
-                "label": self.labels[index],
-                "spans": self.spans[index],
-                "guid": self.guids[index],
-            }
-        else:
-            return {
-                "input_ids": self.input_ids[index],
-                "attention_mask": self.attention_masks[index],
-                "token_type_ids": self.token_type_ids[index],
-                "label": self.labels[index],
-                "guid": self.guids[index],
-            }
+            sample["spans"] = self.spans[index]
+        return sample
 
     def __len__(self):
         return self.input_ids.size(0)

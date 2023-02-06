@@ -4,10 +4,10 @@
 task_names=(boolq cb copa rte wic wsc multirc record)
 task_folders=(BoolQ CB COPA RTE WiC WSC MultiRC ReCoRD)
 
-export CUDA_VISIBLE_DEVICES=0
-export NVIDIA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=2
+export NVIDIA_VISIBLE_DEVICES=2
 
-for ((i = 0; i < 1; i++)); do
+for ((i = 0; i < 9; i++)); do
         echo "task_name: ${task_names[i]}, task_folder: data/${task_folders[i]}"
         python superglue_trainer.py \
                 --data_dir data/${task_folders[i]} \

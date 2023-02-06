@@ -17,6 +17,7 @@
 
 
 import argparse
+import json
 import logging
 import os
 import pickle
@@ -25,7 +26,6 @@ import warnings
 
 import numpy as np
 import torch
-import wandb
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -42,6 +42,7 @@ from transformers import (
 )
 from transformers import logging as trlogging
 
+import wandb
 from exps.models import MODEL_NAMES
 from utils.custom_trainer import SuperGlueTrainer, SuperGlueTrainerBasic
 from utils.data_utils import SuperGLUEDataset
@@ -148,13 +149,13 @@ def load_examples(args, task, tokenizer, split="train"):
         examples,
         tokenizer,
         label_list=label_list,
+        task=args.task_name,
         max_length=args.max_seq_length,
         output_mode=output_mode,
         pad_on_left=args.model_type in ["xlnet"],
         pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
         pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
     )
-
     logger.info("\tFinished creating features")
     if args.local_rank == 0 and split not in ["dev", "train"]:
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
@@ -178,7 +179,6 @@ def load_examples(args, task, tokenizer, split="train"):
         # all_starts = torch.tensor([[s[0] for s in f.span_locs] for f in features], dtype=torch.long)
         # all_ends = torch.tensor([[s[1] for s in f.span_locs] for f in features], dtype=torch.long)
         all_spans = torch.tensor([f.span_locs for f in features])
-        print(all_labels.shape, all_spans.shape)
         dataset = SuperGLUEDataset(
             input_ids=all_input_ids,
             attention_masks=all_attention_mask,
@@ -540,12 +540,10 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
 
     if args.do_train:
         train_dataset = load_examples(args, args.task_name, tokenizer)
-        print(train_dataset[0])
 
     if args.do_eval:
         if args.task_name == "record":
             eval_dataset, _ = load_examples(args, args.task_name, tokenizer, split="dev")
-            print(eval_dataset[0])
         else:
             eval_dataset = load_examples(args, args.task_name, tokenizer, split="dev")
 
@@ -634,6 +632,8 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
         eval_result = trainer.evaluate()
         trainer.save_metrics("eval", eval_result)
         logger.info(eval_result)
+        with open(f"{train_args.output_dir}/first_eval_results.json", "w") as file:
+            json.dump(eval_result, file)
 
     if args.evaluate_test:
         if args.task_name == "record":
@@ -658,8 +658,10 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
             trainer.model = model_def(trainer.model, args.rank)
         trainer.model.to("cuda")
         eval_result = trainer.evaluate()
-        trainer.save_metrics("eval", eval_result)
+        trainer.save_metrics("eval1", eval_result)
         logger.info(eval_result)
+        with open(f"{train_args.output_dir}/compression_eval_results.json", "w") as file:
+            json.dump(eval_result, file)
 
     if args.double_train:
         logger.info("*** Second train loop ***")
@@ -674,8 +676,12 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
         trainer2.train()
         logger.info("*** Evaluate after retraining ***")
         eval_result = trainer2.evaluate(eval_dataset=eval_dataset)
-        trainer2.log_metrics("eval", eval_result)
-        trainer2.save_metrics("eval", eval_result)
+        trainer2.log_metrics("eval2", eval_result)
+        trainer2.save_metrics("eval2", eval_result)
+        with open(
+            f"{train_args.output_dir}/second_train_eval_results.json", "w"
+        ) as file:
+            json.dump(eval_result, file)
 
 
 if __name__ == "__main__":
