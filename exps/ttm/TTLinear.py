@@ -3,8 +3,9 @@ import torch
 import torch.nn as nn
 import tntorch as tn
 from math import sqrt
+from ttmatrix_fisher import TTMatrix
 
-from .forward_backward import forward, einsum_forward
+from forward_backward import forward, einsum_forward
 
 class TTLinear(nn.Module):
     def __init__(self, in_features: int, out_features: int, ranks: List[int], input_dims: List[int],
@@ -22,6 +23,12 @@ class TTLinear(nn.Module):
         factory_kwargs = {"device": device, "dtype": dtype}
         init = torch.rand(in_features, out_features, **factory_kwargs)
         init = (2 * init - 1) / sqrt(in_features)
+        
+        init_fisher = torch.zeros(init.shape)
+        for i in range(0, min(init.shape)):
+            init_fisher[i, i] = 1.0
+
+        
         self.weight = tn.TTMatrix(init, list(ranks), input_dims, output_dims)
 
         # torch doesn't recognize attributes of self.weight as parameters,
@@ -58,7 +65,18 @@ class TTLinear(nn.Module):
         self.weight = tn.TTMatrix(new_weights, self.ranks, self.input_dims, self.output_dims)
         self.cores = nn.ParameterList([nn.Parameter(core) for core in self.weight.cores])
         self.weight.cores = self.cores
+        
+    def set_weight_with_fisher(self, new_weights: torch.Tensor, fisher_matrix: torch.Tensor):
+        # in regular linear layer weights are transposed, so we transpose back
+        new_weights = new_weights.clone().detach().T
+
+        shape = torch.Size((self.in_features, self.out_features))
+        assert new_weights.shape == shape, f"Expected shape {shape}, got {new_weights.shape}"
+
+        self.weight = TTMatrix(new_weights, fisher_matrix, self.ranks, self.input_dims, self.output_dims)
+        self.cores = nn.ParameterList([nn.Parameter(core) for core in self.weight.cores])
+        self.weight.cores = self.cores
 
     def set_from_linear(self, linear: nn.Linear):
-        self.set_weight(linear.weight.data)
+        self.set_weight_with_fisher(linear.weight.data, torch.diag(torch.ones(linear.weight.data.shape)))
         self.bias = nn.Parameter(linear.bias.data.clone()) if linear.bias is not None else None
