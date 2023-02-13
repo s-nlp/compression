@@ -1690,12 +1690,12 @@ class CustomTensor(object):
             #print ("full sum of unfold", torch.sum(I))
             #print ("axis sum of unfold", torch.sum(I, 1))
             if (self.batch):
-                I = torch.diag(torch.sum(I, 2))
+                I = torch.diag(torch.sqrt(torch.sum(I, 2)))
             else:
-                I = torch.diag(torch.sum(I, 1))
+                I = torch.diag(torch.sqrt(torch.sum(I, 1)))
             M = tn.right_unfolding(self.cores[mu], batch=self.batch)
             IM = I@M
-            left, right = tn.truncated_svd(M, delta=delta, rmax=rmax[mu - 1], left_ortho=False, algorithm=algorithm, verbose=verbose, batch=self.batch)
+            left, right = tn.truncated_svd(IM, delta=delta, rmax=rmax[mu - 1], left_ortho=False, algorithm=algorithm, verbose=verbose, batch=self.batch)
             left = torch.linalg.inv(I)@left
             if self.batch:
                 self.cores[mu] = right.reshape([self.cores[mu].shape[0], -1, self.cores[mu].shape[2], self.cores[mu].shape[3]])
