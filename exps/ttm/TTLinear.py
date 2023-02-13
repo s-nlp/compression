@@ -80,3 +80,7 @@ class TTLinear(nn.Module):
     def set_from_linear(self, linear: nn.Linear):
         self.set_weight_with_fisher(linear.weight.data, torch.diag(torch.ones(linear.weight.data.shape)))
         self.bias = nn.Parameter(linear.bias.data.clone()) if linear.bias is not None else None
+        
+    def set_from_linear_w(self, linear: nn.Linear, fisher_matrix: torch.Tensor):
+        self.set_weight_with_fisher(linear.weight.data, fisher_matrix)
+        self.bias = nn.Parameter(linear.bias.data.clone()) if linear.bias is not None else None

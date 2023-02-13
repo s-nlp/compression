@@ -12,7 +12,7 @@ class Checkpointed(nn.Sequential):
         return checkpoint(super().forward, *args)
 
 
-def ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, with_checkpoints=True):
+def ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, with_checkpoints=True, weight_int=None, weight_out=None, weight_count=None):
     if hasattr(model, "bert") and hasattr(model.bert, "encoder"):
         encoder = model.bert.encoder
     elif hasattr(model, "encoder"):
@@ -25,8 +25,12 @@ def ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, with_checkpoint
         token_dim, hidden_dim = layer.intermediate.dense.weight.T.shape
         tt_weight = TTLinear(token_dim, hidden_dim, ranks, input_dims, output_dims,)
                              #forward_fn=forward_backward_module(forward, full_matrix_backward(forward)))
+        if weight_int is not None:
+            weight_int_ = weight_int[i]
+        else: 
+            weight_int_ = torch.ones_like(layer.intermediate.dense.weight.data)
 
-        tt_weight.set_from_linear(layer.intermediate.dense)
+        tt_weight.set_from_linear_w(layer.intermediate.dense, weight_int_)
         layer.intermediate.dense = tt_weight
 
         if with_checkpoints:
@@ -39,7 +43,12 @@ def ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, with_checkpoint
         # so we swap input_dims and output_dims
         tt_weight = TTLinear(hidden_dim, token_dim, ranks, output_dims, input_dims,)
                              #forward_fn=forward_backward_module(forward, full_matrix_backward(forward)))
-        tt_weight.set_from_linear(layer.output.dense)
+        if weight_out is not None:
+            weight_out_ = weight_out[i]
+        else: 
+            weight_out_ = torch.ones_like(layer.output.dense.weight.data)
+        
+        tt_weight.set_from_linear_w(layer.output.dense, weight_out_)
 
         if with_checkpoints:
             print("Checkpoint!")
