@@ -2,7 +2,7 @@
 
 mkdir data
 
-wget "https://dl.fbaipublicfiles.com/glue/superglue/data/v2/AX-b.zip" && unzip AX-b.zip -d "data/" && rm "AX-b.zip"
+wget "https://dl.fbaipublicfiles.com/glue/superglue/data/v2/AX-b.zip" && unzip "AX-b.zip" -d "data/" && rm "AX-b.zip"
 wget "https://dl.fbaipublicfiles.com/glue/superglue/data/v2/CB.zip" && unzip "CB.zip" -d "data/" && rm "CB.zip"
 wget "https://dl.fbaipublicfiles.com/glue/superglue/data/v2/COPA.zip" && unzip "COPA.zip" -d "data/" && rm "COPA.zip"
 wget "https://dl.fbaipublicfiles.com/glue/superglue/data/v2/MultiRC.zip" && unzip "MultiRC.zip" -d "data/" && rm "MultiRC.zip"
