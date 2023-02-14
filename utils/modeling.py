@@ -10,9 +10,9 @@ from transformers import (
     DistilBertModel,
     DistilBertPreTrainedModel,
     RobertaConfig,
+    RobertaForMaskedLM,
     RobertaModel,
     RobertaPreTrainedModel,
-    RobertaForMaskedLM,
 )
 
 
@@ -112,9 +112,8 @@ class BertForSpanClassification(BertPreTrainedModel):
         # feed to ff classifier
         span_reps = self.dropout(span_reps)
         logits = self.classifier(span_reps)
-        outputs = (logits,) + outputs[
-            2:
-        ]  # add hidden states and attention if they are here
+        # add hidden states and attention if they are here
+        outputs = (logits,) + outputs[2:]
 
         if labels is not None:
             if self.num_labels == 1:
@@ -125,8 +124,9 @@ class BertForSpanClassification(BertPreTrainedModel):
                 loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
-
-        return outputs  # (loss), logits, (hidden_states), (attentions)
+        # print(torch.argmax(outputs[1].detach().cpu(), dim=-1))
+        # print(labels)
+        return outputs  # (loss), loegits, (hidden_states), (attentions)
 
 
 class DistilBertForSpanClassification(DistilBertPreTrainedModel):

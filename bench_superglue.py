@@ -26,14 +26,10 @@ import time
 
 import numpy as np
 import torch
+from datasets import load_metric
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
-from utils.modeling import (
-    BertForSpanClassification,
-    RobertaForSpanClassification,
-    DistilBertForSpanClassification,
-)
 from transformers import (
     WEIGHTS_NAME,
     AdamW,
@@ -41,26 +37,29 @@ from transformers import (
     AutoModel,
     AutoTokenizer,
     BertConfig,
-    DistilBertConfig,
-    RobertaConfig,
-    BertTokenizer,
-    RobertaTokenizer,
-    DistilBertTokenizer,
     BertForSequenceClassification,
-    RobertaForSequenceClassification,
+    BertTokenizer,
+    DistilBertConfig,
     DistilBertForSequenceClassification,
+    DistilBertTokenizer,
+    RobertaConfig,
+    RobertaForSequenceClassification,
+    RobertaTokenizer,
     get_linear_schedule_with_warmup,
 )
 
+from utils.modeling import (
+    BertForSpanClassification,
+    DistilBertForSpanClassification,
+    RobertaForSpanClassification,
+)
 from utils.super_glue_data_utils import (
     superglue_convert_examples_to_features as convert_examples_to_features,
-    superglue_output_modes as output_modes,
-    superglue_processors as processors,
-    superglue_tasks_metrics as task_metrics,
-    superglue_tasks_num_spans as task_spans,
 )
-
-from datasets import load_metric
+from utils.super_glue_data_utils import superglue_output_modes as output_modes
+from utils.super_glue_data_utils import superglue_processors as processors
+from utils.super_glue_data_utils import superglue_tasks_metrics as task_metrics
+from utils.super_glue_data_utils import superglue_tasks_num_spans as task_spans
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +146,7 @@ def train(args, train_dataset, model, tokenizer):
             "params": [
                 p
                 for n, p in model.named_parameters()
-                if not any(nd in n for nd in no_decay)
+                if all(nd not in n for nd in no_decay)
             ],
             "weight_decay": args.weight_decay,
         },
@@ -360,6 +359,7 @@ def train(args, train_dataset, model, tokenizer):
                         output_dirs = [
                             os.path.join(args.output_dir, f"checkpoint-{global_step}")
                         ]
+                    print(results)
                     curr_val_metric = results[task_metrics[args.task_name]]
                     if best_val_metric is None or curr_val_metric > best_val_metric:
                         # check if best model so far
@@ -528,10 +528,10 @@ def load_and_cache_examples(args, task, tokenizer, split="train"):
     elif split == "train":
         get_examples = processor.get_train_examples
     examples = get_examples(args.data_dir)
-    print('EXAMPLES:', examples[0])
     features = convert_examples_to_features(
         examples,
         tokenizer,
+        task=args.task_name,
         label_list=label_list,
         max_length=args.max_seq_length,
         output_mode=output_mode,

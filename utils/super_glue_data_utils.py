@@ -24,8 +24,13 @@ from collections import defaultdict
 import numpy as np
 from transformers.utils import is_torch_available
 
-from .data_utils import (DataProcessor, InputExample, InputFeatures,
-                         SpanClassificationExample, SpanClassificationFeatures)
+from .data_utils import (
+    DataProcessor,
+    InputExample,
+    InputFeatures,
+    SpanClassificationExample,
+    SpanClassificationFeatures,
+)
 
 if is_torch_available():
     import torch

@@ -34,11 +34,11 @@ python bench_glue_AIO.py \
 ```
 This script will train and eval bert-base model for GLUE, and then output the results with GPU and CPU utilization.
 
-| model                  | score    | size(MB) | size(M param) | SPS       | train speed | inf speed | used_cpu | used_cpu_mem | used_gpu | used_gpu_mem |
-|------------------------|----------|----------|---------------|-----------|-------------|-----------|----------|--------------|----------|--------------|
-| bert | 0.79508  | 417.6553 | 109.483778    | 513.44118 | 0.21948     | 0.078     | 35.40032 | 2644.8       | 44.9     | 1599         |
-| **stsb**               | **cola** | **mnli** | **mrpc**      | **qnli**  | **qqp**     | **rte**   | **sst2** | **wnli**     |          |              |
-| 0.88816                | 0.57574  | 0.84928  | 0.90352       | 0.91338   | 0.87682     | 0.67508   | 0.92432  | 0.5493       |          |              |
+| model    | score    | size(MB) | size(M param) | SPS       | train speed | inf speed | used_cpu | used_cpu_mem | used_gpu | used_gpu_mem |
+| -------- | -------- | -------- | ------------- | --------- | ----------- | --------- | -------- | ------------ | -------- | ------------ |
+| bert     | 0.79508  | 417.6553 | 109.483778    | 513.44118 | 0.21948     | 0.078     | 35.40032 | 2644.8       | 44.9     | 1599         |
+| **stsb** | **cola** | **mnli** | **mrpc**      | **qnli**  | **qqp**     | **rte**   | **sst2** | **wnli**     |          |              |
+| 0.88816  | 0.57574  | 0.84928  | 0.90352       | 0.91338   | 0.87682     | 0.67508   | 0.92432  | 0.5493       |          |              |
 
 To train model with compression function you can change script to:
 ```bash
@@ -71,6 +71,17 @@ synthetic_benchmark.py \
 Data folder contains evaluation results for gpt2/bert-base-cased/distilbert/pruned-bert on 3090. This can be used as example.
 
 Due to the specifics of gpus, the benchmark should only be performed on immutable environment. The same script running on different gpus will give different results. 
+
+## SUPERGLUE quick start
+
+1. `pip install -r requirements.txt`. Code is tested on `torch==1.13.0` and `nvidia-cuda-nvrtc-cu11==11.7.99`.
+2. Download the data with `. prepare_data.sh` (it is expected that you have gzip installed)
+3. Run experiments with `. do_superglue.sh`. All the arguments are inside.
+4. Get the evaluation results from `superglue_models\{your_model_name}\{task_name}\eval_results_{1,2,3}.json` OR run `parse_results.py`
+
+
+
+
 
 ## Experiments
 

@@ -79,7 +79,7 @@ class SuperGLUEDataset(Dataset):
             "input_ids": self.input_ids[index],
             "attention_mask": self.attention_masks[index],
             "token_type_ids": self.token_type_ids[index],
-            "label": self.labels[index],
+            "labels": self.labels[index],
             "guid": self.guids[index],
         }
         if self.span_cl:

@@ -4,9 +4,10 @@ from collections import Counter, defaultdict
 from typing import Dict, List
 
 import numpy as np
-from scipy.special import softmax
 from datasets import load_metric
+from scipy.special import softmax
 from scipy.stats import pearsonr, spearmanr
+from sklearn.metrics import accuracy_score as acc_score
 from sklearn.metrics import f1_score, matthews_corrcoef
 from transformers import EvalPrediction
 
@@ -39,7 +40,7 @@ def pearson_and_spearman(preds: List[int], labels: List[int]) -> Dict[str, float
     }
 
 
-def normalize_answer(s: str) -> str:
+def normalize_answer(string: str) -> str:
     """Lower text and remove punctuation, articles and extra whitespace.
     From official ReCoRD eval script"""
 
@@ -56,7 +57,7 @@ def normalize_answer(s: str) -> str:
     def lower(text):
         return text.lower()
 
-    return white_space_fix(remove_articles(remove_punc(lower(s))))
+    return white_space_fix(remove_articles(remove_punc(lower(string))))
 
 
 def metric_max_over_ground_truths(metric_fn, prediction, ground_truths) -> int:
@@ -125,7 +126,12 @@ def cb_metric(p: EvalPrediction):
 
 
 def wsc_metric(p: EvalPrediction):
-    return acc_f1(p)
+    preds = np.argmax(np.array(p.predictions), axis=-1)
+    labels = p.label_ids.astype(np.float32)
+    return {
+        "accuracy": acc_score(preds, labels),
+        "f1": f1_score(labels, preds, average="binary"),
+    }
 
 
 def multirc_metric(p: EvalPrediction):
@@ -143,10 +149,7 @@ def multirc_metric(p: EvalPrediction):
         }
         for idx, pred in zip(guids, preds)
     ]
-    result = metric.compute(predictions=predictions, references=labels)
-    print(result)
-
-    return result
+    return metric.compute(predictions=predictions, references=labels)
 
 
 def record_metric(p: EvalPrediction):
@@ -156,7 +159,8 @@ def record_metric(p: EvalPrediction):
     preds = np.argmax(preds, axis=-1)
     guids = p.guids
     labels = p.label_ids.astype(np.float32)
-
+    print(preds)
+    print(labels)
     assert len(guids) == len(preds), "Different number of predictions and IDs!"
     qst2ans = defaultdict(list)
     # print(preds, labels, guids)

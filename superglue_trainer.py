@@ -176,8 +176,6 @@ def load_examples(args, task, tokenizer, split="train"):
         all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
 
     if output_mode in ["span_classification"]:
-        # all_starts = torch.tensor([[s[0] for s in f.span_locs] for f in features], dtype=torch.long)
-        # all_ends = torch.tensor([[s[1] for s in f.span_locs] for f in features], dtype=torch.long)
         all_spans = torch.tensor([f.span_locs for f in features])
         dataset = SuperGLUEDataset(
             input_ids=all_input_ids,
@@ -189,7 +187,6 @@ def load_examples(args, task, tokenizer, split="train"):
             guids=all_guids,
         )
     else:
-        # print('creating dataset')
         dataset = SuperGLUEDataset(
             input_ids=all_input_ids,
             attention_masks=all_attention_mask,
@@ -363,7 +360,7 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
         help="Whether to track energy consumption",
     )
     parser.add_argument(
-        "--logging_steps", type=int, default=500, help="Log every X updates steps."
+        "--logging_steps", type=int, default=100, help="Log every X updates steps."
     )
     parser.add_argument(
         "--eval_and_save_steps",
@@ -577,7 +574,7 @@ def main():  # sourcery skip: low-code-quality, remove-unnecessary-cast
         remove_unused_columns=False,
         load_best_model_at_end=True,
         report_to="wandb",
-        run_name=f"{args.model_name_or_path}_{args.comp_func}_{args.rank}_{args.task_name}",
+        run_name=f"{args.model_name_or_path}_{args.comp_func or ''}_{args.rank or ''}_{args.task_name}",
     )
 
     if args.comp_func in ("svd_ffn_w_inv", "svd_ffn_w"):

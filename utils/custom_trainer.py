@@ -363,7 +363,6 @@ class SuperGlueTrainerBasic(Trainer):
                 with self.compute_loss_context_manager():
                     loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
                 loss = loss.mean().detach()
-
                 if isinstance(outputs, dict):
                     logits = tuple(
                         v for k, v in outputs.items() if k not in ignore_keys + ["loss"]
@@ -805,14 +804,58 @@ class SuperGlueTrainer(Trainer):
         return (loss, logits, labels)
 
 
+# class SuperGlueEvalPrediction:
+#     """
+#     Evaluation output (always contains labels), to be used to compute metrics.
+
+#     Parameters:
+#         predictions (`np.ndarray`): Predictions of the model.
+#         label_ids (`np.ndarray`): Targets to be matched.
+#         inputs (`np.ndarray`, *optional*)
+#     """
+
+#     def __init__(
+#         self,
+#         predictions: Union[np.ndarray, Tuple[np.ndarray]],
+#         label_ids: Union[np.ndarray, Tuple[np.ndarray]],
+#         inputs: Optional[Union[np.ndarray, Tuple[np.ndarray]]] = None,
+#         guids: Optional[Union[np.ndarray, Tuple[np.ndarray]]] = None,
+#     ):
+#         self.predictions = predictions
+#         self.label_ids = label_ids
+#         self.inputs = inputs
+#         self.guids = guids
+
+#     def __iter__(self):
+#         if self.inputs is None:
+#             return iter((self.predictions, self.label_ids))
+#         if self.guids is not None:
+#             return iter((self.predictions, self.label_ids, self.inputs, self.guids))
+#         else:
+#             return iter((self.predictions, self.label_ids, self.inputs))
+
+#     def __getitem__(self, idx):
+#         if idx < 0 or idx > 2:
+#             raise IndexError("tuple index out of range")
+#         if idx == 2 and self.inputs is None:
+#             raise IndexError("tuple index out of range")
+#         if idx == 0:
+#             return self.predictions
+#         elif idx == 1:
+#             return self.label_ids
+#         elif idx == 2:
+#             return self.inputs
+
+
 class SuperGlueEvalPrediction:
     """
     Evaluation output (always contains labels), to be used to compute metrics.
 
     Parameters:
-        predictions (`np.ndarray`): Predictions of the model.
-        label_ids (`np.ndarray`): Targets to be matched.
-        inputs (`np.ndarray`, *optional*)
+        predictions (`np.ndarray` or `Tuple[np.ndarray]`): Predictions of the model.
+        label_ids (`np.ndarray` or `Tuple[np.ndarray]`): Targets to be matched.
+        inputs (`np.ndarray` or `Tuple[np.ndarray]`, *optional*): Inputs of the model.
+        guids (`np.ndarray` or `Tuple[np.ndarray]`, *optional*): Identifiers of the inputs.
     """
 
     def __init__(
@@ -827,15 +870,15 @@ class SuperGlueEvalPrediction:
         self.inputs = inputs
         self.guids = guids
 
-    def __iter__(self):
+    def __iter__(self) -> Tuple:
         if self.inputs is None:
-            return iter((self.predictions, self.label_ids))
+            return (self.predictions, self.label_ids)
         if self.guids is not None:
-            return iter((self.predictions, self.label_ids, self.inputs, self.guids))
+            return (self.predictions, self.label_ids, self.inputs, self.guids)
         else:
-            return iter((self.predictions, self.label_ids, self.inputs))
+            return (self.predictions, self.label_ids, self.inputs)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Union[np.ndarray, Tuple[np.ndarray]]:
         if idx < 0 or idx > 2:
             raise IndexError("tuple index out of range")
         if idx == 2 and self.inputs is None:
