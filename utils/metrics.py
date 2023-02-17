@@ -40,7 +40,7 @@ def pearson_and_spearman(preds: List[int], labels: List[int]) -> Dict[str, float
     }
 
 
-def normalize_answer(string: str) -> str:
+def normalize_answer(text: str) -> str:
     """Lower text and remove punctuation, articles and extra whitespace.
     From official ReCoRD eval script"""
 
@@ -57,7 +57,7 @@ def normalize_answer(string: str) -> str:
     def lower(text):
         return text.lower()
 
-    return white_space_fix(remove_articles(remove_punc(lower(string))))
+    return white_space_fix(remove_articles(remove_punc(lower(text))))
 
 
 def metric_max_over_ground_truths(metric_fn, prediction, ground_truths) -> int:

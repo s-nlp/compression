@@ -19,18 +19,14 @@
 import json
 import logging
 import os
+import re
 from collections import defaultdict
 
 import numpy as np
 from transformers.utils import is_torch_available
 
-from .data_utils import (
-    DataProcessor,
-    InputExample,
-    InputFeatures,
-    SpanClassificationExample,
-    SpanClassificationFeatures,
-)
+from .data_utils import (DataProcessor, InputExample, InputFeatures,
+                         SpanClassificationExample, SpanClassificationFeatures)
 
 if is_torch_available():
     import torch
@@ -690,9 +686,15 @@ class RecordProcessor(DataProcessor):
                     label = 1 if ent in answers else 0
                     candidate = question_template.replace("@placeholder", ent)
                     guid = [passage_id, question_id, ent_id]
+                    if len(passage) + len(candidate) > 512:
+                        passage = passage[:512 - len(candidate)]
+                    passage = re.sub("\n@highlight\n", " ", passage)
                     examples.append(
                         InputExample(
-                            guid=guid, text_a=passage, text_b=candidate, label=label
+                            guid=guid,
+                            text_a=passage,
+                            text_b=candidate,
+                            label=label,
                         )
                     )
         return examples

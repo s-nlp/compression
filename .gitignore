@@ -17,3 +17,5 @@ test.sh
 utils/test.ipynb
 do_superglue2.sh
 do_superglue3.sh
+test.ipynb
+parser.ipynb
