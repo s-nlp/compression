@@ -19,6 +19,7 @@ MODEL_NAMES = OrderedDict(
         ("str_prune", "structured_pruning"),
         ("uns_prune", "unstructured_pruning"),
         ("ttm_ffn", "apply_ttm_compress_bert_ffn"),
+        ("weighted_ttm_ffn", "apply_ttm_compress_bert_ffn"),
         ("fwsvd_ffn", "apply_fwsvd_compress_bert_ffn")
     ])
 
@@ -34,8 +35,8 @@ def simple_svd_model(model, rank = 150):
     model = simple_svd_func(model, rank)
     return model
 
-def apply_ttm_compress_bert_ffn(model, ranks, input_dims, output_dims):
-    model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims)
+def apply_ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, dataloader=None):
+    model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, dataloader=dataloader)
     return model
 
 def apply_fwsvd_compress_bert_ffn(model, dataloader, rank, device, use_baseline=False, low_rank_method="row-sum-weighted-svd"):

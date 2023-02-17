@@ -129,11 +129,11 @@ def estimate_fisher_weights_bert(
     fisher_int = dict(map(lambda x: (x[0], x[1] / x[1].max()), fisher_int.items()))
     fisher_out = dict(map(lambda x: (x[0], x[1] / x[1].max()), fisher_out.items()))
 
-    for key, item in fisher_int.items():
-        np.save(f"fisher_matrix_inter_layer_{key}.npy", item.detach().cpu().numpy())
+    #for key, item in fisher_int.items():
+    #    np.save(f"fisher_matrix_inter_layer_{key}.npy", item.detach().cpu().numpy())
 
-    for key, item in fisher_out.items():
-        np.save(f"figher_matrix_outer_layer_{key}.npy", item.detach().cpu().numpy())
+    #for key, item in fisher_out.items():
+    #    np.save(f"fisher_matrix_outer_layer_{key}.npy", item.detach().cpu().numpy())
 
     return fisher_int, fisher_out
 

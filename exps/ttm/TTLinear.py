@@ -3,8 +3,33 @@ import torch
 import torch.nn as nn
 import tntorch as tn
 from math import sqrt
+from torch.utils.checkpoint import checkpoint
 
 from .forward_backward import forward, einsum_forward
+
+
+class Checkpointed(nn.Sequential):
+    def forward(self, *args):
+        return checkpoint(super().forward, *args)
+
+    
+class WeightedTTLinear(nn.Module):
+    def __init__(self, fisher_information: torch.Tensor, *args, **kwargs):
+        super().__init__()
+        self.fisher_information = fisher_information
+        self.ttlinear = TTLinear(*args, **kwargs)
+    
+    def forward(self, x: torch.Tensor):
+        self.fisher_information = self.fisher_information.to(x.device)
+        return self.ttlinear(x / self.fisher_information)
+    
+    def set_weight(self, new_weights: torch.Tensor):
+        self.ttlinear.set_weight(self.fisher_information.reshape(1, -1).to(new_weights.device) * new_weights)
+    
+    def set_from_linear(self, linear):
+        self.set_weight(linear.weight.data)
+        self.ttlinear.bias = nn.Parameter(linear.bias.data.clone()) if linear.bias is not None else None
+
 
 class TTLinear(nn.Module):
     def __init__(self, in_features: int, out_features: int, ranks: List[int], input_dims: List[int],
