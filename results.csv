@@ -10,3 +10,4 @@ ttm-checkpointed-einsum-forward-bert-base-uncased-rank-40,0.632,213.092,40.115,6
 ttm-checkpointed-einsum-forward-bert-base-uncased-rank-40-rerun,0.601,213.092,27.322,6.184,2697.0,11.0,1401.0,0.807,0.0,,0.822,,,0.549,0.864,0.563
 ttm-checkpointed-einsum-forward-bert-base-uncased-rank-80,0.616,224.342,43.228,6.188,2702.0,19.0,1413.0,0.846,0.107,,0.81,,,0.588,0.866,0.479
 ttm-checkpointed-einsum-forward-bert-base-uncased-rank-80-rerun,0.605,224.342,26.411,6.159,2694.0,14.0,1413.0,0.83,0.0,,0.821,,,0.542,0.873,0.563
+wttm-bert-base-uncased-rank-10,0.677,202.593,20.456,6.188,2661.0,12.0,1369.0,0.809,0.031,0.776,0.821,0.838,0.847,0.56,0.85,0.563
