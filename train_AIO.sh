@@ -1,10 +1,10 @@
-for rank in 10 20 40 80
+for rank in 10
 do
    echo "doing $model"
    CUDA_VISIBLE_DEVICES=3,4,5 python bench_glue_AIO.py \
 	--model_name_or_path bert-base-uncased \
-	--run_name ttm-checkpointed-einsum-forward-bert-base-uncased-rank-$rank-rerun --exp_name 'ttm_ffn' \
-    --rank $rank \
+	--run_name wttm-bert-base-uncased-rank-$rank --exp_name 'weighted_ttm_ffn' \
+	--rank $rank \
 	--save_strategy "epoch" \
 	--logging_strategy no --save_strategy no \
 	--do_bench --bench_on_eval --bench_on_train \

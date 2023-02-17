@@ -647,13 +647,15 @@ def main(tasks_):
             def_class = MODEL_NAMES[model_args.exp_name]
             class_module = __import__("exps.models", fromlist=[def_class])
             model_def = getattr(class_module, def_class)
-            if model_args.exp_name == "ttm_ffn":
+            if model_args.exp_name in ["ttm_ffn", "weighted_ttm_ffn"]:
                 # make list of equal tensor ranks
                 # e.g. if tt_input_dims is [4,6,8,4], produces [rank, rank, rank]
                 tt_ranks = [int(model_args.rank) for _ in range(len(model_args.tt_input_dims) - 1)]
-                trainer.model = model_def(trainer.model, tt_ranks, model_args.tt_input_dims, model_args.tt_output_dims)
+                trainer.model = model_def(trainer.model, tt_ranks, model_args.tt_input_dims, model_args.tt_output_dims,
+                                          dataloader=trainer.get_train_dataloader() if "weighted" in model_args.exp_name else None)
             elif model_args.exp_name == "fwsvd_ffn":
-                trainer.model = model_def(trainer.model, trainer.get_train_dataloader(), rank=int(model_args.rank), device="cuda:0", use_baseline=model_args.use_baseline, low_rank_method=model_args.low_rank_method)
+                trainer.model = model_def(trainer.model, trainer.get_train_dataloader(), rank=int(model_args.rank), 
+                                          device="cuda:0", use_baseline=model_args.use_baseline, low_rank_method=model_args.low_rank_method)
             else:
                 trainer.model = model_def(trainer.model, int(model_args.rank))
             trainer.model.to('cuda')
@@ -790,8 +792,11 @@ def _mp_fn(index):
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
     #tasks_ = ['stsb', 'cola', 'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
-    tasks_ = ['cola', 'stsb', 'sst2', 'mrpc', 'rte', 'wnli']
+    
+    tasks_ = ['cola', 'stsb', 'sst2', 'mrpc', 'rte', 'wnli', 'mnli', 'qqp', 'qnli']
+    
     main_bench()
+    
     for task_ in tasks_:
         path_to = main(task_)
 

@@ -102,7 +102,7 @@ class PyTorchBenchmark(Benchmark):
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
                     
-                    if self.args.exp_name == "ttm_ffn":
+                    if self.args.exp_name in ["ttm_ffn", "weighted_ttm_ffn"]:
                         # make list of equal tensor ranks
                         # e.g. if tt_input_dims is [4,6,8,4], produces [rank, rank, rank]
                         tt_ranks = [int(self.args.rank) for _ in range(len(self.args.tt_input_dims) - 1)]
@@ -182,7 +182,7 @@ class PyTorchBenchmark(Benchmark):
                     def_class = MODEL_NAMES[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
-                    if self.args.exp_name == "ttm_ffn":
+                    if self.args.exp_name in ["ttm_ffn", "weighted_ttm_ffn"]:
                         # make list of equal tensor ranks
                         # e.g. if tt_input_dims is [4,6,8,4], produces [rank, rank, rank]
                         tt_ranks = [int(self.args.rank) for _ in range(len(self.args.tt_input_dims) - 1)]
