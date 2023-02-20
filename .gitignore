@@ -1,4 +1,5 @@
 data/combined/
+data/
 exps/__pycache__/
 utils/__pycache__/
 superglue_models/

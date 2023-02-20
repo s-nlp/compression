@@ -1,17 +1,20 @@
+import os
 import re
 import string
 from collections import Counter
-from typing import Dict, List, Type
+from typing import Any, Dict, List, Type, Union
 
 import datasets
 import numpy as np
 import pandas as pd
 import pymorphy2
-from datasets import DatasetDict, load_metric
+from datasets import Dataset, DatasetDict, load_metric
 from fuzzysearch import find_near_matches
 from Levenshtein import distance
 from scipy.special import softmax
-from transformers import EvalPrediction
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import f1_score as f1_score_sklearn
+from transformers import EvalPrediction, PreTrainedTokenizer
 
 
 def _quantize_max_length(max_length):
@@ -19,35 +22,58 @@ def _quantize_max_length(max_length):
 
 
 class DatasetConfig:
+    """
+    Configuration for a dataset, including metadata and methods for data processing and evaluation.
+
+    This dataclass stores metadata about a dataset, including the name of the best metric for evaluation and the number
+    of classes in the dataset. It also provides methods for processing data, computing evaluation metrics, and
+    processing model predictions.
+
+    Attributes:
+        best_metric (str): The name of the best metric for evaluating the dataset.
+        num_classes (int): The number of classes in the dataset.
+        data (DatasetDict): A dictionary of the dataset, containing its inputs, labels, and other metadata.
+
+    Methods:
+        process_data(examples, tokenizer, max_length): A static method for processing data examples before training.
+        compute_metrics(p, split): A method for computing evaluation metrics on model predictions.
+        process_predictions(p, split, **kwargs): A method for processing model predictions after inference.
+
+    """
+
     best_metric: str
     num_classes: int
 
-    def __init__(self, d: DatasetDict):
-        self.data = d
+    def __init__(self, dataset: DatasetDict):
+        self.data = dataset
 
     @staticmethod
-    def process_data(examples, tokenizer, max_length):
+    def process_data(
+        examples: List[str], tokenizer: PreTrainedTokenizer, max_length: int
+    ):
         pass
 
-    def compute_metrics(self, p: EvalPrediction, split: str):
+    def compute_metrics(self, predictions: EvalPrediction, split: str):
         pass
 
-    def process_predictions(self, p: np.ndarray, split: str, **kwargs) -> List[Dict]:
+    def process_predictions(
+        self, predictions: np.ndarray, split: str, **kwargs
+    ) -> List[Dict]:
         pass
-
-
-ACCURACY = load_metric("accuracy")
-F1 = load_metric("f1")
 
 
 class RCBConfig(DatasetConfig):
-    best_metric = "f1"
-    num_classes = 3
+    best_metric: str = "f1"
+    num_classes: int = 3
 
     _index_to_label = {0: "entailment", 1: "contradiction", 2: "neutral"}
 
     @staticmethod
-    def process_data(examples, tokenizer, max_length):
+    def process_data(
+        examples: List[str], tokenizer: PreTrainedTokenizer, max_length: int
+    ):
+        _label_to_index = {"entailment": 0, "contradiction": 1, "neutral": 2}
+
         result = tokenizer(
             examples["premise"],
             examples["hypothesis"],
@@ -57,55 +83,117 @@ class RCBConfig(DatasetConfig):
             padding=False,
         )
 
-        result["labels"] = examples["label"]
+        if isinstance(examples["label"], list):
+            result["labels"] = [_label_to_index[x] for x in examples["label"]]
+        elif isinstance(examples["label"], str):
+            result["labels"] = _label_to_index[examples["label"]]
         return result
 
-    def compute_metrics(self, p: EvalPrediction, split: str, **kwargs):
-        preds = p.predictions
-        preds = preds.argmax(axis=1)
+    def compute_metrics(self, prediction: EvalPrediction, split: str, **kwargs):
+        preds = prediction.predictions.argmax(axis=1)
 
-        acc_result = ACCURACY.compute(predictions=preds, references=p.label_ids)
-        f1_result = F1.compute(
-            predictions=preds, references=p.label_ids, average="macro"
+        accuracy = accuracy_score(prediction.label_ids.astype(np.float32), preds)
+        f1 = f1_score_sklearn(
+            prediction.label_ids.astype(np.float32),
+            preds,
+            labels=[0, 1, 2],
+            average="macro",
         )
+        return {"accuracy": accuracy, "f1": f1}
 
-        return {"accuracy": acc_result["accuracy"], "f1": f1_result["f1"]}
-
-    def process_predictions(self, p: np.ndarray, split: str, **kwargs):
-        preds_list = p.argmax(axis=1).tolist()
+    def process_predictions(self, prediction: np.ndarray, split: str, **kwargs):
+        predicted_labels = prediction.argmax(axis=1).tolist()
 
         return [
-            {"idx": idx, "label": self._index_to_label[predicted_class]}
-            for idx, predicted_class in enumerate(preds_list)
+            {"idx": i, "label": self._index_to_label[label]}
+            for i, label in enumerate(predicted_labels)
         ]
 
 
 class TerraConfig(DatasetConfig):
+    """
+    Configuration class for the Terra dataset, which inherits from the DatasetConfig class.
+
+    Attributes:
+        best_metric (str): The evaluation metric used to determine the best model during training.
+        num_classes (int): The number of classes in the dataset.
+        _index_to_label (Dict[int, str]): Mapping from integer labels to string labels.
+
+    Methods:
+        process_data: Tokenizes and preprocesses the data for the model training.
+        compute_metrics: Computes the evaluation metrics for the predictions made by the model.
+        process_predictions: Converts the predictions into a more readable format.
+
+    Usage:
+        config = TerraConfig()
+
+    """
+
     best_metric = "accuracy"
     num_classes = 2
     _index_to_label = {0: "entailment", 1: "not_entailment"}
 
     @staticmethod
-    def process_data(examples, tokenizer, max_length):
+    def process_data(
+        examples: List[str], tokenizer: PreTrainedTokenizer, max_length: int
+    ):
+        """
+        Tokenizes a list of examples and returns a dictionary with input IDs,
+        token type IDs, and labels.
+
+        Args:
+            examples (List[Dict]): A list of dictionaries where each dictionary
+                contains a "premise" field with the text of a premise and a
+                "hypothesis" field with the text of a hypothesis. Each dictionary may
+                also contain a "label" field with a boolean value or a list of boolean
+                values indicating whether the corresponding premise entails the
+                corresponding hypothesis.
+            tokenizer (PreTrainedTokenizer): The tokenizer to use for tokenizing the
+                input text.
+            max_length (int): The maximum length of the tokenized input sequences.
+
+        Returns:
+            Dict[str, List[List[int]]]: A dictionary containing the input IDs,
+            token type IDs, and labels. The "input_ids" and "token_type_ids" fields
+            contain lists of input IDs and token type IDs for each example, and the
+            "labels" field contains a list of binary label values for each example.
+
+        """
+        _label_to_index = {"entailment": 0, "not_entailment": 1}
+
         result = tokenizer(
             examples["premise"],
             examples["hypothesis"],
             return_token_type_ids=True,
             padding=False,
         )
-        result["labels"] = examples["label"]
+        if isinstance(examples["label"], list):
+            result["labels"] = [_label_to_index[x] for x in examples["label"]]
+        elif isinstance(examples["label"], str):
+            result["labels"] = _label_to_index[examples["label"]]
         return result
 
-    def compute_metrics(self, p: EvalPrediction, split: str, **kwargs):
-        preds = p.predictions
-        preds = preds.argmax(axis=1)
+    def compute_metrics(self, predictions: EvalPrediction, split: str, **kwargs):
+        """
+        Computes and returns the accuracy of the model predictions.
 
-        acc_result = ACCURACY.compute(predictions=preds, references=p.label_ids)
+        Args:
+            predictions (EvalPrediction): The model predictions.
+            split (str): The split name.
 
-        return {"accuracy": acc_result["accuracy"]}
+        Returns:
+            Dict[str, float]: A dictionary containing the accuracy of the model predictions.
+        """
+        return {
+            "accuracy": accuracy_score(
+                y_pred=predictions.predictions.argmax(axis=1),
+                y_true=predictions.label_ids.astype(np.float32),
+            )
+        }
 
-    def process_predictions(self, p: np.ndarray, split: str, **kwargs):
-        preds_list = p.argmax(axis=1).tolist()
+    def process_predictions(self, predictions: np.ndarray, split: str, **kwargs):
+
+        preds_list = predictions.argmax(axis=1).tolist()
 
         return [
             {"idx": idx, "label": self._index_to_label[predicted_class]}
@@ -127,12 +215,61 @@ class LiDiRusConfig(TerraConfig):
 
 
 class DaNetQAConfig(DatasetConfig):
+    """
+    Configuration for the DaNetQA dataset. Inherits from the DatasetConfig class.
+
+    Attributes:
+        best_metric (str): The evaluation metric used to determine the best model during training.
+        num_classes (int): The number of classes in the dataset.
+
+    Methods:
+        process_data: Tokenizes and preprocesses the data for the model training.
+        compute_metrics: Computes the evaluation metrics for the predictions made by the model.
+        process_predictions: Converts the predictions into a more readable format.
+
+    Usage:
+        config = DaNetQAConfig()
+    """
+
     best_metric = "accuracy"
     num_classes = 2
 
     @staticmethod
-    def process_data(examples, tokenizer, max_length):
-        result = tokenizer(
+    def process_data(
+        examples: List[Dict[str, str]], tokenizer: PreTrainedTokenizer, max_length: int
+    ) -> Dict[str, List[int]]:
+        """
+        Tokenizes a list of examples and returns a dictionary with input IDs,
+        token type IDs, and labels.
+
+        Args:
+            examples (List[Dict]): A list of dictionaries where each dictionary
+                contains a "passage" field with the text of a passage and a
+                "question" field with the text of a question. Each dictionary may
+                also contain a "label" field with a boolean value or a list of boolean
+                values indicating whether the corresponding passage answers the
+                corresponding question.
+            tokenizer (PreTrainedTokenizer): The tokenizer to use for tokenizing the
+                input text.
+            max_length (int): The maximum length of the tokenized input sequences.
+
+        Returns:
+            Dict[str, List[List[int]]]: A dictionary containing the input IDs,
+            token type IDs, and labels. The "input_ids" and "token_type_ids" fields
+            contain lists of input IDs and token type IDs for each example, and the
+            "labels" field contains a list of binary label values for each example.
+        """
+        if "label" not in examples:
+            raise ValueError("Missing label field in examples")
+
+        if isinstance(examples["label"], list):
+            labels = [int(x) for x in examples["label"]]
+        elif isinstance(examples["label"], str):
+            labels = int(examples["label"])
+        else:
+            raise ValueError("Label field should be a list or a string")
+
+        encoded_inputs = tokenizer(
             examples["passage"],
             examples["question"],
             truncation="only_first",
@@ -140,19 +277,49 @@ class DaNetQAConfig(DatasetConfig):
             max_length=_quantize_max_length(max_length),
             padding=False,
         )
-        result["labels"] = examples["label"]
-        return result
 
-    def compute_metrics(self, p: EvalPrediction, split: str, **kwargs):
-        preds = p.predictions
-        preds = preds.argmax(axis=1)
+        encoded_inputs["labels"] = labels
+        return encoded_inputs
 
-        acc_result = ACCURACY.compute(predictions=preds, references=p.label_ids)
+    def compute_metrics(
+        self, predictions: EvalPrediction, split: str, **kwargs
+    ) -> Dict[str, float]:
+        """
+        Computes and returns the accuracy of the model predictions.
 
-        return {"accuracy": acc_result["accuracy"]}
+        Args:
+            predictions (EvalPrediction): The model predictions.
+            split (str): The split name.
 
-    def process_predictions(self, p: np.ndarray, split: str, **kwargs):
-        preds_list = p.argmax(axis=1).tolist()
+        Returns:
+            Dict[str, float]: A dictionary containing the accuracy of the model predictions.
+
+        """
+        preds = predictions.predictions.argmax(axis=1)
+
+        return {
+            "accuracy": accuracy_score(
+                y_pred=preds, y_true=predictions.label_ids.astype(np.float32)
+            )
+        }
+
+    def process_predictions(
+        self, preds: np.ndarray, split: str, **kwargs
+    ) -> List[Dict[str, Union[int, str]]]:
+        """
+        Processes the predictions returned by the model and returns a list of dictionaries containing the
+        prediction index and the predicted label.
+
+        Args:
+            p (np.ndarray): The model predictions.
+            split (str): The split name.
+
+        Returns:
+            List[Dict[str, Union[int, str]]]: A list of dictionaries containing the prediction index and
+                the predicted label.
+
+        """
+        preds_list = preds.argmax(axis=1).tolist()
 
         return [
             {"idx": idx, "label": str(bool(prediction)).lower()}
@@ -161,11 +328,41 @@ class DaNetQAConfig(DatasetConfig):
 
 
 class PARusConfig(DatasetConfig):
+    """
+    Configuration for the PARus dataset. Inherits from the DatasetConfig class.
+
+    Attributes:
+        best_metric (str): The evaluation metric used to determine the best model during training.
+        num_classes (int): The number of classes in the dataset.
+
+    Methods:
+        process_data: Tokenizes and preprocesses the data for the model training.
+        compute_metrics: Computes the evaluation metrics for the predictions made by the model.
+        process_predictions: Converts the predictions into a more readable format.
+
+    Usage:
+        config = PARusConfig()
+    """
+
     best_metric = "accuracy"
     num_classes = 2
 
     @staticmethod
-    def process_data(examples, tokenizer, max_length):
+    def process_data(
+        examples: Dict[str, List[str]], tokenizer: PreTrainedTokenizer, max_length: int
+    ) -> Dict[str, np.ndarray]:
+        """
+        Tokenizes the examples in the PARus dataset and returns a dictionary
+        containing the tokenized inputs and labels.
+
+        Args:
+            examples (Dict[str, List[str]]): The examples to process.
+            tokenizer (PreTrainedTokenizer): The tokenizer to use.
+            max_length (int): The maximum sequence length.
+
+        Returns:
+            Dict[str, np.ndarray]: A dictionary containing the tokenized inputs and labels.
+        """
         first_texts = []
         second_texts = []
         labels = []
@@ -204,38 +401,98 @@ class PARusConfig(DatasetConfig):
         result["labels"] = labels
         return result
 
-    def _get_per_instance_preds(self, flattened_preds):
+    def _get_per_instance_preds(self, flattened_preds: np.ndarray) -> np.ndarray:
+        """
+        Computes the per-instance predictions from the flattened model predictions.
+
+        Args:
+            flattened_preds (np.ndarray): The flattened model predictions.
+
+        Returns:
+            np.ndarray: The per-instance predictions.
+        """
         true_probs = softmax(flattened_preds, axis=1)[:, 1]
         probs_per_instance = true_probs.reshape((true_probs.shape[0] // 2, 2))
         return np.argmax(probs_per_instance, axis=1)
 
-    def compute_metrics(self, p: EvalPrediction, split: str, **kwargs):
-        preds = p.predictions
-        per_instance_preds = self._get_per_instance_preds(preds)
-        label_ids = p.label_ids.reshape((per_instance_preds.shape[0], 2)).argmax(
+    def compute_metrics(
+        self, predictions: EvalPrediction, split: str, **kwargs
+    ) -> Dict[str, float]:
+        """
+        Computes the accuracy metric for the PARus dataset.
+
+        Args:
+            predictions (EvalPrediction): The model predictions.
+            split (str): The split name.
+
+        Returns:
+            Dict[str, float]: A dictionary containing the computed metrics.
+        """
+        per_instance_preds = self._get_per_instance_preds(predictions.predictions)
+        label_ids = predictions.label_ids.reshape(
+            (per_instance_preds.shape[0], 2)
+        ).argmax(
             axis=1
         )  # [0, 1] -> 1, [1, 0] -> 0
 
-        acc_result = ACCURACY.compute(
-            predictions=per_instance_preds, references=label_ids
-        )
-        return {"accuracy": acc_result["accuracy"]}
+        return {
+            "accuracy": accuracy_score(
+                y_pred=per_instance_preds, y_true=label_ids.astype(np.float32)
+            )
+        }
 
-    def process_predictions(self, p: np.ndarray, split: str, **kwargs):
-        preds = self._get_per_instance_preds(p).tolist()
+    def process_predictions(
+        self, predictions: np.ndarray, split: str, **kwargs
+    ) -> List[Dict[str, Union[int, str]]]:
+        """
+        Processes model predictions for a given split,
+        returns a list of dicts with the index of each instance
+        and its predicted label.
+
+        Args:
+            p (np.ndarray): The predictions output by the model for the given split.
+            split (str): The name of the split, e.g., "train", "dev", or "test".
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            A list of dictionaries with the following keys:
+                - "idx": The index of the instance in the original dataset.
+                - "label": The predicted label for the instance. Possible values are "0" or "1".
+        """
+        preds = self._get_per_instance_preds(predictions).tolist()
 
         return [{"idx": idx, "label": is_same} for idx, is_same in enumerate(preds)]
 
 
 class MuSeRCConfig(DatasetConfig):
-    best_metric = "f1"
-    num_classes = 2
+    """Configuration class for the MuSeRC dataset."""
+
+    best_metric: str = "f1"
+    num_classes: int = 2
 
     @staticmethod
-    def process_data(examples, tokenizer, max_length):
+    def process_data(
+        examples: Dict[str, Union[List[str], List[List[str]], List[int]]],
+        tokenizer: PreTrainedTokenizer,
+        max_length: int,
+    ) -> Dict[str, Union[List[int], List[List[int]]]]:
+        """
+        Preprocesses the data.
+
+        Args:
+            examples: The examples to preprocess.
+            tokenizer: The tokenizer to use.
+            max_length: The maximum length of the sequences.
+
+        Returns:
+            The preprocessed examples.
+        """
+
         questions_with_answers = [
             question + answer
-            for question, answer in zip(examples["question"], examples["answer"])
+            for question, answer in zip(
+                examples["passage"]["question"], examples["passage"]["answer"]
+            )
         ]
 
         result = tokenizer(
@@ -252,14 +509,27 @@ class MuSeRCConfig(DatasetConfig):
     @staticmethod
     def _get_paragraph_metrics(x):
         em = int((x["prediction"] == x["labels"]).all())
-        f1_result = F1.compute(
-            predictions=x["prediction"], references=x["labels"], average="binary"
+        f1_result = f1_score_sklearn(
+            y_pred=x["prediction"], y_true=x["labels"], average="binary"
         )
         return pd.Series({"f1": f1_result["f1"], "em": em})
 
-    def compute_metrics(self, p: EvalPrediction, split: str, **kwargs):
-        preds = p.predictions.argmax(axis=-1)
-        labels = p.label_ids
+    def compute_metrics(
+        self, predictions: EvalPrediction, split: str, **kwargs
+    ) -> Dict[str, float]:
+        """
+        Computes the evaluation metrics for the predictions.
+
+        Args:
+            p: The predictions to evaluate.
+            split: The name of the split being evaluated.
+            **kwargs: Additional arguments.
+
+        Returns:
+            A dictionary of metric names to metric values.
+        """
+        preds = predictions.predictions.argmax(axis=-1)
+        labels = predictions.label_ids.astype(np.float32)
 
         split_idx_df = pd.DataFrame(self.data[split]["idx"])
 
@@ -274,7 +544,16 @@ class MuSeRCConfig(DatasetConfig):
         )
 
     @staticmethod
-    def _unravel_answers(x):
+    def _unravel_answers(x: pd.DataFrame) -> pd.Series:
+        """
+        Computes the evaluation metrics for a single paragraph.
+
+        Args:
+            x: The data for the paragraph.
+
+        Returns:
+            A Pandas Series containing the metrics for the paragraph.
+        """
         x_renamed = x[["answer", "prediction"]].rename(
             columns={"answer": "idx", "prediction": "label"}
         )
@@ -461,12 +740,13 @@ class RUSSEConfig(DatasetConfig):
         result["labels"] = examples["label"]
         return result
 
-    def compute_metrics(self, p: EvalPrediction, split: str, **kwargs):
-        preds = p.predictions
-        preds = np.argmax(preds, axis=1)
-
-        acc_result = ACCURACY.compute(predictions=preds, references=p.label_ids)
-        return {"accuracy": acc_result["accuracy"]}
+    def compute_metrics(self, predictions: EvalPrediction, split: str, **kwargs):
+        preds = np.argmax(predictions.predictions, axis=1)
+        return {
+            "accuracy": accuracy_score(
+                y_true=predictions.label_ids.astype(np.float32), y_pred=preds
+            )
+        }
 
     def process_predictions(self, p: np.ndarray, split: str, **kwargs):
         preds_list = p.argmax(axis=1).tolist()
@@ -709,11 +989,30 @@ MCC = load_metric("matthews_correlation")
 
 
 class RuCoLAConfig(DatasetConfig):
-    best_metric = "mcc"
-    num_classes = 2
+    """
+    Configuration class for the RuCoLA dataset.
+    """
+
+    best_metric: str = "mcc"
+    num_classes: int = 2
 
     @staticmethod
-    def process_data(examples, tokenizer, max_length):
+    def process_data(
+        examples: Dict[str, List[Any]], tokenizer: PreTrainedTokenizer, max_length: int
+    ) -> Dict[str, Any]:
+        """
+        Tokenizes the input examples and returns a dictionary with the tokenized inputs
+        and optionally the labels.
+
+        Args:
+            examples (Dict[str, List[Any]]): A dictionary containing the input examples.
+            tokenizer (PreTrainedTokenizerBase): A tokenizer to use for tokenization.
+            max_length (int): The maximum length of the tokenized input.
+
+        Returns:
+            A dictionary containing the tokenized inputs and optionally the labels.
+        """
+
         result = tokenizer(
             examples["sentence"],
             return_token_type_ids=True,
@@ -725,20 +1024,42 @@ class RuCoLAConfig(DatasetConfig):
             result["labels"] = examples["acceptable"]
         return result
 
-    def compute_metrics(self, p: EvalPrediction, split: str, **kwargs):
-        preds = p.predictions
-        preds = np.argmax(preds, axis=1)
+    def compute_metrics(self, predictions: EvalPrediction, split: str, **kwargs):
+        preds = predictions.predictions.argmax(1)
+        """
+        Computes the accuracy and Matthews correlation coefficient for the model
+        predictions and returns them as a dictionary.
 
-        acc_result = ACCURACY.compute(predictions=preds, references=p.label_ids)
-        mcc_result = MCC.compute(predictions=preds, references=p.label_ids)
+        Args:
+            p (EvalPrediction): The predictions to evaluate.
+            split (str): The split on which the predictions were made.
+            **kwargs: Additional keyword arguments.
 
+        Returns:
+            A dictionary containing the computed metrics.
+        """
         return {
-            "accuracy": acc_result["accuracy"],
-            "mcc": mcc_result["matthews_correlation"],
+            "accuracy": accuracy_score(
+                y_pred=preds, y_true=predictions.label_ids.astype(np.float32)
+            ),
+            "mcc": matthews_corrcoef(
+                y_pred=preds, y_true=predictions.label_ids.astype(np.float32)
+            ),
         }
 
-    def process_predictions(self, p: np.ndarray, split: str, **kwargs):
-        preds_list = p.argmax(axis=1).tolist()
+    def process_predictions(self, predictions: np.ndarray, split: str, **kwargs):
+        """
+        Processes the model predictions and returns them as a list of dictionaries.
+
+        Args:
+            p (np.ndarray): The model predictions to process.
+            split (str): The split on which the predictions were made.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            A list of dictionaries containing the processed predictions.
+        """
+        preds_list = predictions.argmax(axis=1).tolist()
 
         return [
             {"id": idx, "acceptable": predicted_class}
@@ -770,3 +1091,92 @@ TASK_TO_NAME = {
     "rucos": "RuCoS",
     "rucola": "RuCoLA",
 }
+
+# TASK_TYPES = {
+#     "rcb": "classification",
+#     "terra": "classification",
+#     "danetqa": "classification",
+#     "rwsd": "span_classification",
+#     "lidirus": "classification",
+#     "parus": "classification",
+#     "muserc": "classification",
+#     "russe": "span_classification",
+#     "rucos": "entity_choice",
+#     "rucola": "classification",
+# }
+
+# TASK_NUM_CLASSES = {
+#     "rcb": 3,
+#     "terra": 2,
+#     "danetqa": 2,
+#     "rwsd": 2,
+#     "lidirus": 2,
+#     "parus": 2,
+#     "muserc": 2,
+#     "russe": 2,
+#     "rucos": 2,
+#     "rucola": 2,
+# }
+
+TASK_TYPES: Dict[str, str] = {
+    "rcb": "classification",
+    "terra": "classification",
+    "danetqa": "classification",
+    "rwsd": "classification",
+    "lidirus": "classification",
+    "parus": "classification",
+    "muserc": "classification",
+    "russe": "span_classification",
+    "rucos": "entity_choice",
+    "rucola": "classification",
+}
+
+TASK_NUM_CLASSES: Dict[str, int] = {
+    "rcb": 3,
+    "terra": 2,
+    "danetqa": 2,
+    "rwsd": 2,
+    "lidirus": 2,
+    "parus": 2,
+    "muserc": 2,
+    "russe": 2,
+    "rucos": 2,
+    "rucola": 2,
+}
+
+
+COLUMNS_TO_DROP: Dict[str, List[str]] = {
+    "rcb": ["premise", "label", "hypothesis", "verb", "negation", "genre"],
+    "terra": ["premise", "hypothesis", "label"],
+    "danetqa": ["question", "passage", "label"],
+}
+
+
+def load_data(task_name: str, data_path: str = "data/combined/") -> DatasetDict:
+    """
+    Loads data for a given task from JSON files.
+
+    Args:
+        task_name (str): The name of the task for which to load data.
+        data_path (str, optional): The directory containing the JSON files. Defaults to "data/combined/".
+
+    Returns:
+        A `DatasetDict` object containing the loaded training, validation, and test datasets.
+
+    Raises:
+        FileNotFoundError: If any of the required JSON files cannot be found.
+
+    """
+    task_path = os.path.join(data_path, TASK_TO_NAME[task_name])
+    train_file = os.path.join(task_path, "train.jsonl")
+    val_file = os.path.join(task_path, "val.jsonl")
+
+    if not all(os.path.isfile(p) for p in [train_file, val_file]):
+        raise FileNotFoundError(
+            f"Could not find required files for task '{task_name}' in directory '{data_path}'"
+        )
+
+    train_dataset = Dataset.from_json(train_file)
+    val_dataset = Dataset.from_json(val_file)
+
+    return DatasetDict(train=train_dataset, validation=val_dataset)

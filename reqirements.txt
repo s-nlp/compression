@@ -1,0 +1,20 @@
+transformers
+accelerate
+datasets >= 1.8.0
+sentencepiece != 0.1.92
+scipy
+scikit-learn
+protobuf
+torch >= 1.3
+evaluate
+psutil
+py3nvml
+tensorly
+ipython
+ipykernel
+evaluate
+setuptools==59.5.0
+wandb
+pymorphy2
+fuzzysearch
+levenshtein
