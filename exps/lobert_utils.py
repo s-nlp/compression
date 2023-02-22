@@ -131,31 +131,30 @@ def lobert_student(config, student_model, student_mode='exact', num_hidden_layer
         student_model = decompose_self_svd(student_model, self_attention_tensor, config, num_hidden_layers, rank) 
     elif student_mode == 'ffn_svd':
         logger.info('lobert mode : ffn_SVD_compression begin')
-        student_model = decompose_ffn_svd(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers, rank)
-    #TODO: reimplement this
-    #elif student_mode == 'ffn_tuckervertical':
-    #    logger.info('lobert mode : ffn_tucker_compression begin')
-    #    student_model = decompose_ffn_tucker_vertical(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers)
-    #elif student_mode == 'self_tuckerlayer':
-    #    logger.info('lobert mode : self_tucker_layer compression begin')
-    #    student_model = decompose_self_tucker_layer(student_model, self_attention_tensor, config, num_hidden_layers)
-    #elif student_mode == 'self_falconlayer':
-    #    logger.info('lobert mode : self_falcon_layer compression begin')
-    #    student_model = decompose_self_falcon_layer(student_model, self_attention_tensor, config, num_hidden_layers)
-    #elif student_mode == 'self_tuckervertical':
-    #    logger.info('lobert mode : self_tucker_vertical compression begin')
-    #    student_model = decompose_self_tucker_vertical(student_model, self_attention_tensor, config,num_hidden_layers)
-    #elif student_mode == 'self_falconvertical':
-    #    logger.info('lobert mode : self_falcon_vertical compression begin')
-    #    student_model = decompose_self_falcon_vertical(student_model, self_attention_tensor, config,num_hidden_layers)
-    #elif student_mode == 'self_tucker_4d':
-    #    logger.info('lobert mode : self_tucker_4d compression begin')
-    #    student_model = decompose_self_tucker_4d(student_model, self_attention_tensor, config,num_hidden_layers)
-    #elif student_mode == 'self_falcon_4d':
-    #    logger.info('lobert mode : self_falcon_4d compression begin')
-    #    student_model = decompose_self_falcon_4d(student_model, self_attention_tensor, config,num_hidden_layers)
-    #else:
-    #    raise NotImplementedError('not implemented for this student mode')
+        student_model = decompose_ffn_svd(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers)
+    elif student_mode == 'ffn_tuckervertical':
+        logger.info('lobert mode : ffn_tucker_compression begin')
+        student_model = decompose_ffn_tucker_vertical(student_model, intermediate_tensor, output_tensor, config, num_hidden_layers)
+    elif student_mode == 'self_tuckerlayer':
+        logger.info('lobert mode : self_tucker_layer compression begin')
+        student_model = decompose_self_tucker_layer(student_model, self_attention_tensor, config, num_hidden_layers)
+    elif student_mode == 'self_falconlayer':
+        logger.info('lobert mode : self_falcon_layer compression begin')
+        student_model = decompose_self_falcon_layer(student_model, self_attention_tensor, config, num_hidden_layers)
+    elif student_mode == 'self_tuckervertical':
+        logger.info('lobert mode : self_tucker_vertical compression begin')
+        student_model = decompose_self_tucker_vertical(student_model, self_attention_tensor, config,num_hidden_layers)
+    elif student_mode == 'self_falconvertical':
+        logger.info('lobert mode : self_falcon_vertical compression begin')
+        student_model = decompose_self_falcon_vertical(student_model, self_attention_tensor, config,num_hidden_layers)
+    elif student_mode == 'self_tucker_4d':
+        logger.info('lobert mode : self_tucker_4d compression begin')
+        student_model = decompose_self_tucker_4d(student_model, self_attention_tensor, config,num_hidden_layers)
+    elif student_mode == 'self_falcon_4d':
+        logger.info('lobert mode : self_falcon_4d compression begin')
+        student_model = decompose_self_falcon_4d(student_model, self_attention_tensor, config,num_hidden_layers)
+    else:
+        raise NotImplementedError('not implemented for this student mode')
             
             
     #if args.fp16:

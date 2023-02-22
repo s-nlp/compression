@@ -16,8 +16,8 @@
 """ Finetuning the library models for sequence classification on GLUE."""
 # You can also adapt this script on your own text classification task. Pointers for this are left as comments.
 
-from hf_bench.benchmark import PyTorchBenchmark
-from hf_bench.benchmark_args import PyTorchBenchmarkArguments
+from utils.hf_bench.benchmark import PyTorchBenchmark
+from utils.hf_bench.benchmark_args import PyTorchBenchmarkArguments
 from exps.models import MODEL_NAMES
 
 import argparse
@@ -64,7 +64,8 @@ from torch.utils.data import DataLoader, SequentialSampler, Subset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
-from bench import GlueBench
+from to_table import OverallTable
+from synthetic_benchmark import synth_bench
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.23.0.dev0")
@@ -85,6 +86,32 @@ task_to_keys = {
 
 logger = logging.getLogger(__name__)
 
+
+class CustomTrainer(Trainer):
+    def make_grad_bank(self, model):
+        self.grad_bank_out_epoch = []
+        self.grad_bank_int_epoch = []
+        self.grad_bank_out = {i:torch.zeros((model.config.hidden_size,model.config.intermediate_size)) for i in range(model.config.num_hidden_layers)}
+        self.grad_bank_int = {i:torch.zeros((model.config.intermediate_size,model.config.hidden_size)) for i in range(model.config.num_hidden_layers)}
+        self.grad_bank_out_2 = {i:torch.zeros((model.config.hidden_size,model.config.intermediate_size)) for i in range(model.config.num_hidden_layers)}
+        self.grad_bank_int_2 = {i:torch.zeros((model.config.intermediate_size,model.config.hidden_size)) for i in range(model.config.num_hidden_layers)}
+        self.avg_counter = 0
+    def training_step(self, model, inputs):
+        model.train()
+        inputs = self._prepare_inputs(inputs)
+        with self.compute_loss_context_manager():
+            loss = self.compute_loss(model, inputs)
+        loss.backward()
+
+        for layer in range(model.config.num_hidden_layers):
+
+            self.grad_bank_out[layer] += model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() #(model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() **2).sum(0)
+            self.grad_bank_int[layer] += model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() #(model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() **2).sum(0)
+        
+            self.grad_bank_out_2[layer] += model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu()**2 #(model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() **2).sum(0)
+            self.grad_bank_int_2[layer] += model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu()**2 #(model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() **2).sum(0)
+        self.avg_counter+=1
+        return loss.detach()
 
 @dataclass
 class DataTrainingArguments:
@@ -125,7 +152,7 @@ class DataTrainingArguments:
         default=5,
         metadata={
             "help": (
-                "Number of bench evaluation"
+                "Seconds for warmup blocked_autorange benchmark"
             )
         },
     )
@@ -231,13 +258,18 @@ class ModelArguments:
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
     )
-    exp_name: str = field(
+    comp_func: str = field(
         default='none',
-        metadata={"help": "The name of the exp to train "}
+        metadata={"help": "Compression function to be used on finetuned model"}
     )
-    rank: int = field(default=150, metadata={"help": "rank of data"})
-    use_baseline: bool = field(default=False, metadata={"help": "set Ficher information in FWSVD to torch.ones"})
-    low_rank_method: str = field(default="row-sum-weighted-svd", metadata={"help": "method to solve weighted low rank approximation in FWSVD"})
+    rank: int = field(
+        default=150, 
+        metadata={"help": "rank to compress"})
+
+    tt_ranks: Tuple[int, ...] = field(
+        default=(10,10,10),
+        metadata={"help": "Ranks of TTm decomposition of weights"}
+    )
     tt_input_dims: Tuple[int, ...] = field(
         default=(4,6,8,4),
         metadata={"help": "Input dimensions in TTMatrix representation of weights"}
@@ -247,52 +279,10 @@ class ModelArguments:
         metadata={"help": "Output dimensions in TTMatrix representation of weights"}
     )
 
-#Dont work with HF argparser
-#https://github.com/huggingface/transformers/blob/main/src/transformers/hf_argparser.py
-def main_bench():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name_or_path",default="results.csv", help="write report to FILE")
-    parser.add_argument("--run_name",help="don't print status messages to hfgstdout")
-    parser.add_argument("--output_dir",help="don't print status messadsastdout")
-    parser.add_argument('--batch_sizes', help='batch_sizes', type=str, default='[1,64]')
-    parser.add_argument('--sequence_lengths', help='batch_sizes', type=str, default='[16,128]')
-    parser.add_argument('--max_bench_iter', help='how many', type=int, default=1)
-    parser.add_argument("--do_bench", help="do bench",action="store_true")
-    parser.add_argument("--bench_on_train", help="do bench train",action="store_true")
-    parser.add_argument("--bench_on_eval", help="do bench test",action="store_true")
-    parser.add_argument("--exp_name", help="do exp test",default="none")
-    parser.add_argument("--rank",default=0, help="rank of")
-    parser.add_argument("--use_baseline", action="store_true", help="set Ficher information in FWSVD to torch.ones")
-    parser.add_argument("--low_rank_method", default="row-sum-weighted-svd", help="method to solve weighted low rank approximation in FWSVD")
-    parser.add_argument("--tt_input_dims", type=int, nargs="+", default=(4,6,8,4), help="input_dims in TTMatrix") 
-    parser.add_argument("--tt_output_dims", type=int, nargs="+", default=(8,8,6,8), help="output_dims in TTMatrix")
-    args_bench, unknown = parser.parse_known_args()
-    print(args_bench)
-    batch_sizes = [int(item) for item in args_bench.batch_sizes.replace('[','').replace(']','').split(',')]*args_bench.max_bench_iter
-    sequence_lengths = [int(item) for item in args_bench.sequence_lengths.replace('[','').replace(']','').split(',')]*args_bench.max_bench_iter
-    #args = parser.parse_args(sys.argv[1:])
-
-    if args_bench.do_bench:
-        save_to = args_bench.output_dir + args_bench.run_name+r'/'
-        isExist = os.path.exists(save_to)
-        if not isExist:
-            # Create a new directory because it does not exist 
-            os.makedirs(save_to)
-
-        args_full = PyTorchBenchmarkArguments(models=[args_bench.model_name_or_path], batch_sizes=batch_sizes, 
-                                 sequence_lengths=sequence_lengths,
-                                 training=args_bench.bench_on_train, inference=args_bench.bench_on_eval, cuda=True,
-                                 multi_process=True, verbose=False, trace_memory_line_by_line=False,
-                                 inference_time_csv_file=save_to+r'inference_time.csv',
-                                 inference_memory_csv_file=save_to+r'inference_memory.csv',
-                                 train_time_csv_file=save_to+r'train_time.csv',
-                                 train_memory_csv_file=save_to+r'train_memory.csv',
-                                 save_to_csv=True, env_print=False, exp_name=args_bench.exp_name, 
-                                 rank=args_bench.rank, tt_input_dims=args_bench.tt_input_dims,
-                                 tt_output_dims=args_bench.tt_output_dims)
-        benchmark = PyTorchBenchmark(args_full)
-        benchmark.run()
-        
+    double_train: bool = field(
+        default=False,
+        metadata={"help": "Train model after compression"},
+    )
 
 def main(tasks_):
     # See all possible arguments in src/transformers/training_args.py
@@ -610,15 +600,28 @@ def main(tasks_):
         data_collator = None
 
     # Initialize our Trainer
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=eval_dataset if training_args.do_eval else None,
-        compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
-        data_collator=data_collator,
-    )
+    if not model_args.comp_func in ['none', None]:
+        trainer = CustomTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset if training_args.do_train else None,
+            eval_dataset=eval_dataset if training_args.do_eval else None,
+            compute_metrics=compute_metrics,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+        )
+        trainer.make_grad_bank(model)
+    else:
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset if training_args.do_train else None,
+            eval_dataset=eval_dataset if training_args.do_eval else None,
+            compute_metrics=compute_metrics,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+        )
+    trainer.model.to('cuda')
 
     # Training
     if training_args.do_train:
@@ -640,24 +643,37 @@ def main(tasks_):
             trainer.save_metrics("train", metrics)
             trainer.save_state()
 
+            import pickle
+            full_dict = {'weight_int':[],
+                        'weight_out':[],
+                        'weight_count':0}
+            full_dict['weight_int'] = trainer.grad_bank_int_2
+            full_dict['weight_out'] = trainer.grad_bank_out_2
+            full_dict['weight_count'] = trainer.avg_counter
+
+            with open(os.path.join(trainer.args.output_dir, 'weight_dict.pickle'), 'wb') as handle:
+                pickle.dump(full_dict, handle)
+
+
     # EVALUATION
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-        if not model_args.exp_name in ['none', None]:
-            def_class = MODEL_NAMES[model_args.exp_name]
+        if not model_args.comp_func in ['none', None]:
+
+            def_class = MODEL_NAMES[model_args.comp_func]
             class_module = __import__("exps.models", fromlist=[def_class])
             model_def = getattr(class_module, def_class)
-            if model_args.exp_name in ["ttm_ffn", "weighted_ttm_ffn"]:
+            if model_args.comp_func in ["ttm_ffn", "weighted_ttm_ffn"]:
                 # make list of equal tensor ranks
                 # e.g. if tt_input_dims is [4,6,8,4], produces [rank, rank, rank]
                 tt_ranks = [int(model_args.rank) for _ in range(len(model_args.tt_input_dims) - 1)]
                 trainer.model = model_def(trainer.model, tt_ranks, model_args.tt_input_dims, model_args.tt_output_dims,
-                                          dataloader=trainer.get_train_dataloader() if "weighted" in model_args.exp_name else None)
-            elif model_args.exp_name == "fwsvd_ffn":
+                                          dataloader=trainer.get_train_dataloader() if "weighted" in model_args.comp_func else None)
+            elif model_args.comp_func == "fwsvd_ffn":
                 trainer.model = model_def(trainer.model, trainer.get_train_dataloader(), rank=int(model_args.rank), 
                                           device="cuda:0", use_baseline=model_args.use_baseline, low_rank_method=model_args.low_rank_method)
             else:
-                trainer.model = model_def(trainer.model, int(model_args.rank))
+                trainer.model = model_def(trainer.model, model_args.rank, weight_int=trainer.grad_bank_int_2, weight_out=trainer.grad_bank_out_2, weight_count=trainer.avg_counter)
             trainer.model.to('cuda')
 
         # Loop to handle MNLI double evaluation (matched, mis-matched)
@@ -691,59 +707,54 @@ def main(tasks_):
     # BENCHMARKING
     if data_args.do_bench:
         logger.info("*** Benchmarking ***")
-        if not model_args.exp_name in ['none', None]:
-            #def_class = MODEL_NAMES[model_args.exp_name]
-            #class_module = __import__("exps.models", fromlist=[def_class])
-            #model_def = getattr(class_module, def_class)
-            #model_def(trainer.model)
-            #trainer.model = model_def(trainer.model)
-            #trainer.model.to('cuda')
-            #######double train####
-            if True:
-                trainer2 = Trainer(
-                    model=trainer.model,
-                    args=training_args,
-                    train_dataset=train_dataset if training_args.do_train else None,
-                    eval_dataset=eval_dataset if training_args.do_eval else None,
-                    compute_metrics=compute_metrics,
-                    tokenizer=tokenizer,
-                    data_collator=data_collator,)
-                trainer2.train()
+        if not model_args.comp_func in ['none', None] and model_args.double_train:
+            trainer2 = Trainer(
+                model=trainer.model,
+                args=training_args,
+                train_dataset=train_dataset if training_args.do_train else None,
+                eval_dataset=eval_dataset if training_args.do_eval else None,
+                compute_metrics=compute_metrics,
+                tokenizer=tokenizer,
+                data_collator=data_collator,)
+            trainer2.train()
 
-        for cnt in range(1):#range(data_args.max_bench_iter):
-            # Loop to handle MNLI double evaluation (matched, mis-matched)
-            tasks = [data_args.task_name]
-            eval_datasets = [eval_dataset]
-            if data_args.task_name == "mnli":
-                tasks.append("mnli-mm")
-                valid_mm_dataset = raw_datasets["validation_mismatched"]
-                if data_args.max_eval_samples is not None:
-                    max_eval_samples = min(len(valid_mm_dataset), data_args.max_eval_samples)
-                    valid_mm_dataset = valid_mm_dataset.select(range(max_eval_samples))
-                eval_datasets.append(valid_mm_dataset)
-                combined = {}
-            for eval_dataset, task in zip(eval_datasets, tasks):
+        # Loop to handle MNLI double evaluation (matched, mis-matched)
+        tasks = [data_args.task_name]
+        eval_datasets = [eval_dataset]
+        if data_args.task_name == "mnli":
+            tasks.append("mnli-mm")
+            valid_mm_dataset = raw_datasets["validation_mismatched"]
+            if data_args.max_eval_samples is not None:
+                max_eval_samples = min(len(valid_mm_dataset), data_args.max_eval_samples)
+                valid_mm_dataset = valid_mm_dataset.select(range(max_eval_samples))
+            eval_datasets.append(valid_mm_dataset)
+            combined = {}
+        for eval_dataset, task in zip(eval_datasets, tasks):
 
-                metrics = trainer.evaluate(eval_dataset=eval_dataset)
+            metrics = trainer.evaluate(eval_dataset=eval_dataset)
 
-                max_eval_samples = (
-                    data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
-                )
-                metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+            max_eval_samples = (
+                data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+            )
+            metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
 
-                if task == "mnli-mm":
-                    metrics = {k + "_mm": v for k, v in metrics.items()}
-                if task is not None and "mnli" in task:
-                    combined.update(metrics)
-                    
-                size_of = trainer.model.get_memory_footprint()
-                metrics.update({'size_of':size_of})
+            if task == "mnli-mm":
+                metrics = {k + "_mm": v for k, v in metrics.items()}
+            if task is not None and "mnli" in task:
+                combined.update(metrics)
                 
-                if task is not None and "mnli" in task:
-                    combined.update({'size_of':size_of})
-                    
-                trainer.log_metrics("bench_"+str(cnt), metrics)
-                trainer.save_metrics("bench_"+str(cnt), combined if task is not None and "mnli" in task else metrics)
+            size_of = trainer.model.get_memory_footprint()
+            param_of = sum(p.numel() for p in trainer.model.parameters())
+            metrics.update({'size_of':size_of})
+            metrics.update({'param_of':param_of})
+
+            
+            if task is not None and "mnli" in task:
+                combined.update({'size_of':size_of})
+                combined.update({'param_of':param_of})
+                
+            trainer.log_metrics("bench_", metrics)
+            trainer.save_metrics("bench_0", combined if task is not None and "mnli" in task else metrics)
 
     if training_args.do_predict:
         logger.info("*** Predict ***")
@@ -781,23 +792,24 @@ def main(tasks_):
         kwargs["dataset"] = f"GLUE {data_args.task_name.upper()}"
 
         #training_args.output_dir
-    return training_args.output_dir
+    #return training_args.output_dir
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)
     main()
 
-
 ##BAD MANNERS
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
-    #tasks_ = ['stsb', 'cola', 'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
-    
-    tasks_ = ['cola', 'stsb', 'sst2', 'mrpc', 'rte', 'wnli', 'mnli', 'qqp', 'qnli']
-    
-    main_bench()
-    
+    #tasks_ = ['stsb', 'cola','mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'] #  ,'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
+    tasks_ = ['cola']
+    synth_bench()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run_name")
+    parser.add_argument("--output_dir")
+    args_alt, _ = parser.parse_known_args()
+
     for task_ in tasks_:
         path_to = main(task_)
-
-    GlueBench(['--path',path_to+r'/../..'])
+    OverallTable(os.path.join(args_alt.output_dir, args_alt.run_name,'..'), 'results.csv')
