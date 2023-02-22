@@ -6,6 +6,7 @@ from .fwsvd_compress_bert import compute_nd_replace_dense
 from .simple_svd import simple_svd_func, w_svd_func, w_svd_func_inv
 from .unstructured_prune import uns_prune
 from .structured_prune import str_prune
+from .drone import
 
 from collections import OrderedDict
 MODEL_NAMES = OrderedDict(
@@ -45,6 +46,7 @@ def simple_svd_model(model, rank = 150, *args, **kwargs):
 def apply_ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, dataloader=None):
     model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, dataloader=dataloader)
     return model
+
 def weight_svd_model(model, rank = 150, weight_int=None, weight_out=None, weight_count=None):
     model = w_svd_func(model, rank, weight_int, weight_out, weight_count)
     return model
@@ -62,6 +64,11 @@ def apply_fwsvd_compress_bert_ffn(model, dataloader, rank, device, use_baseline=
                                      compute_full=(low_rank_method != "row-sum-weighted-svd"))
     print("DONE FWSVD COMPRESSION\n\n\n")
     print("="*50)
+    return model
+
+def apply_drone_compress_bert(model, dataloader, rank, device):
+    model = drone(model, dataloader=dataloader, rank=rank, device=device)
+
     return model
 
 def dummy_self(model, *args):
