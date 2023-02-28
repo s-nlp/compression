@@ -1,7 +1,7 @@
-task_names=(muserc)
+task_names=(rwsd)
 
-export CUDA_VISIBLE_DEVICES=2
-export NVIDIA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=1
+export NVIDIA_VISIBLE_DEVICES=1
 
 for ((i = 0; i < 1; i++)); do
     python run_trainer.py \
@@ -10,8 +10,8 @@ for ((i = 0; i < 1; i++)); do
         --task_name ${task_names[i]} \
         --do_train \
         --do_eval \
-        --per_gpu_train_batch_size 8 \
-        --per_gpu_eval_batch_size 1 \
+        --per_gpu_train_batch_size 32 \
+        --per_gpu_eval_batch_size 32 \
         --learning_rate 5e-5 \
         --num_train_epochs 3 \
         --gradient_accumulation_steps 1 \

@@ -179,17 +179,25 @@ def main(args):
         dataset = load_data(task_name=args.task_name)
 
     config = TASK_TO_CONFIG[args.task_name](dataset)
-    print("DATASET LOADED")
-    processed_dataset = dataset.map(
-        partial(
-            config.process_data, tokenizer=tokenizer, max_length=args.max_seq_length
-        ),
-        num_proc=32,
-        keep_in_memory=True,
-        batched=True,
-        remove_columns=COLUMNS_TO_DROP[args.task_name],
-    )
 
+    if args.task_name != "rwsd":
+        processed_dataset = dataset.map(
+            partial(
+                config.process_data, tokenizer=tokenizer, max_length=args.max_seq_length
+            ),
+            num_proc=32,
+            keep_in_memory=True,
+            batched=True,
+            remove_columns=COLUMNS_TO_DROP[args.task_name],
+        )
+
+    else:
+        processed_dataset = dataset.map(
+            lambda x: config.process_data(
+                examples=x, tokenizer=tokenizer, max_length=255
+            ),
+            remove_columns=COLUMNS_TO_DROP[args.task_name],
+        )
     # if "labels" in processed_dataset["test"].column_names:
     #     test_without_labels = processed_dataset["test"].remove_columns(["labels"])
     # else:
@@ -225,7 +233,7 @@ def main(args):
         seed=args.seed,
         fp16=args.fp16,
         group_by_length=True,
-        report_to="wandb",
+        # report_to="wandb",
         run_name=model_name,
         save_total_limit=1,
         load_best_model_at_end=True,
@@ -259,31 +267,6 @@ def main(args):
 
     if args.task_name != "terra":
         rmtree(f"{args.output_dir}/{model_name}/{TASK_TO_NAME[args.task_name]}")
-
-    # best_run = np.argmax(dev_metrics_per_run)
-    # best_predictions = predictions_per_run[best_run]
-    # processed_predictions = config.process_predictions(
-    #     best_predictions, split="test", processed_dataset=processed_dataset["test"]
-    # )
-
-    # prefix_without_task = model_prefix.replace(f"{args.task_name}_", "")
-
-    # os.makedirs(f"{training_args.output_dir}/preds", exist_ok=True)
-    # if args.task_name == "rucola":
-    #     result_df = pd.DataFrame.from_records(processed_predictions, index="id")
-    #     result_df.to_csv(
-    #         f"{training_args.output_dir}/preds/{TASK_TO_NAME[args.task_name]}.csv"
-    #     )
-    # else:
-    #     with open(
-    #         f"{training_args.output_dir}/preds/{TASK_TO_NAME[args.task_name]}.jsonl",
-    #         "w+",
-    #     ) as f:
-    #         for prediction in processed_predictions:
-    #             print(
-    #                 json.dumps(prediction, ensure_ascii=True, cls=NumpyEncoder),
-    #                 file=f,
-    #             )
 
 
 if __name__ == "__main__":

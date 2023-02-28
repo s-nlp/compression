@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import string
@@ -5,6 +6,7 @@ from collections import Counter
 from typing import Any, Dict, List, Type, Union
 
 import datasets
+import evaluate
 import numpy as np
 import pandas as pd
 import pymorphy2
@@ -15,6 +17,8 @@ from scipy.special import softmax
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import f1_score as f1_score_sklearn
 from transformers import EvalPrediction, PreTrainedTokenizer
+
+f1_metric = evaluate.load("f1")
 
 
 def _quantize_max_length(max_length):
@@ -89,20 +93,21 @@ class RCBConfig(DatasetConfig):
             result["labels"] = _label_to_index[examples["label"]]
         return result
 
-    def compute_metrics(self, prediction: EvalPrediction, split: str, **kwargs):
-        preds = prediction.predictions.argmax(axis=1)
+    def compute_metrics(self, predictions: EvalPrediction, split: str, **kwargs):
+        preds = predictions.predictions.argmax(axis=1)
 
-        accuracy = accuracy_score(prediction.label_ids.astype(np.float32), preds)
-        f1 = f1_score_sklearn(
-            prediction.label_ids.astype(np.float32),
-            preds,
-            labels=[0, 1, 2],
-            average="macro",
-        )
-        return {"accuracy": accuracy, "f1": f1}
+        return {
+            "accuracy": accuracy_score(predictions.label_ids.astype(np.float32), preds),
+            "f1": f1_score_sklearn(
+                predictions.label_ids.astype(np.float32),
+                preds,
+                labels=[0, 1, 2],
+                average="macro",
+            ),
+        }
 
-    def process_predictions(self, prediction: np.ndarray, split: str, **kwargs):
-        predicted_labels = prediction.argmax(axis=1).tolist()
+    def process_predictions(self, predictions: np.ndarray, split: str, **kwargs):
+        predicted_labels = predictions.argmax(axis=1).tolist()
 
         return [
             {"idx": i, "label": self._index_to_label[label]}
@@ -487,14 +492,10 @@ class MuSeRCConfig(DatasetConfig):
         Returns:
             The preprocessed examples.
         """
-
         questions_with_answers = [
             question + answer
-            for question, answer in zip(
-                examples["passage"]["question"], examples["passage"]["answer"]
-            )
+            for question, answer in zip(examples["question"], examples["answer"])
         ]
-
         result = tokenizer(
             examples["paragraph"],
             questions_with_answers,
@@ -507,12 +508,21 @@ class MuSeRCConfig(DatasetConfig):
         return result
 
     @staticmethod
-    def _get_paragraph_metrics(x):
-        em = int((x["prediction"] == x["labels"]).all())
-        f1_result = f1_score_sklearn(
-            y_pred=x["prediction"], y_true=x["labels"], average="binary"
+    def _get_paragraph_metrics(prediction_pair):
+        exact_match = int(
+            (prediction_pair["prediction"] == prediction_pair["labels"]).all()
         )
-        return pd.Series({"f1": f1_result["f1"], "em": em})
+        f1_result = f1_score_sklearn(
+            y_pred=prediction_pair["prediction"],
+            y_true=prediction_pair["labels"],
+            average="binary",
+        )
+        return pd.Series(
+            {
+                "f1": f1_result,
+                "em": exact_match,
+            }
+        )
 
     def compute_metrics(
         self, predictions: EvalPrediction, split: str, **kwargs
@@ -521,7 +531,7 @@ class MuSeRCConfig(DatasetConfig):
         Computes the evaluation metrics for the predictions.
 
         Args:
-            p: The predictions to evaluate.
+            predictions: The predictions to evaluate.
             split: The name of the split being evaluated.
             **kwargs: Additional arguments.
 
@@ -544,7 +554,7 @@ class MuSeRCConfig(DatasetConfig):
         )
 
     @staticmethod
-    def _unravel_answers(x: pd.DataFrame) -> pd.Series:
+    def _unravel_answers(answers_df: pd.DataFrame) -> pd.Series:
         """
         Computes the evaluation metrics for a single paragraph.
 
@@ -554,19 +564,22 @@ class MuSeRCConfig(DatasetConfig):
         Returns:
             A Pandas Series containing the metrics for the paragraph.
         """
-        x_renamed = x[["answer", "prediction"]].rename(
+        answers_df_unraveled = answers_df[["answer", "prediction"]].rename(
             columns={"answer": "idx", "prediction": "label"}
         )
-        return {"answers": x_renamed.to_dict("records"), "idx": x.name}
+        return {
+            "answers": answers_df_unraveled.to_dict("records"),
+            "idx": answers_df.name,
+        }
 
     @staticmethod
     def _unravel_preds(x):
         questions = x.groupby("question").apply(MuSeRCConfig._unravel_answers).to_list()
         return {"idx": x.name, "passage": {"questions": questions}}
 
-    def process_predictions(self, p: np.ndarray, split: str, **kwargs):
+    def process_predictions(self, predictions: np.ndarray, split: str, **kwargs):
         split_idx_df = pd.DataFrame(self.data[split]["idx"])
-        preds = p.argmax(axis=1)
+        preds = predictions.argmax(axis=1)
 
         split_idx_df["prediction"] = preds
 
@@ -574,10 +587,9 @@ class MuSeRCConfig(DatasetConfig):
 
 
 class RUSSEConfig(DatasetConfig):
-    best_metric = "accuracy"
-    num_classes = 2
+    best_metric: str = "accuracy"
+    num_classes: int = 2
     _index_to_label = {0: "false", 1: "true"}
-
     PUNCTUATION_TO_REMOVE = (
         " «»—-…\xa0" + string.punctuation + "".join(map(str, range(10)))
     )
@@ -731,13 +743,17 @@ class RUSSEConfig(DatasetConfig):
 
                 mask[entity_start : entity_end + 1] = 1
 
-            e1_masks.append(e1_mask)
-            e2_masks.append(e2_mask)
+            e1_masks.append([int(x) for x in e1_mask])
+            e2_masks.append([int(x) for x in e2_mask])
 
         result["e1_mask"] = e1_masks
         result["e2_mask"] = e2_masks
 
-        result["labels"] = examples["label"]
+        if isinstance(examples["label"], list):
+            result["labels"] = [int(x) for x in examples["label"]]
+        else:
+            result["labels"] = int(examples["label"])
+
         return result
 
     def compute_metrics(self, predictions: EvalPrediction, split: str, **kwargs):
@@ -985,9 +1001,6 @@ class RuCoSConfig(DatasetConfig):
         ]
 
 
-MCC = load_metric("matthews_correlation")
-
-
 class RuCoLAConfig(DatasetConfig):
     """
     Configuration class for the RuCoLA dataset.
@@ -1067,89 +1080,74 @@ class RuCoLAConfig(DatasetConfig):
         ]
 
 
-TASK_TO_CONFIG: Dict[str, Type[DatasetConfig]] = {
-    "rcb": RCBConfig,
-    "terra": TerraConfig,
-    "danetqa": DaNetQAConfig,
-    "lidirus": LiDiRusConfig,
-    "parus": PARusConfig,
-    "muserc": MuSeRCConfig,
-    "russe": RUSSEConfig,
-    "rucos": RuCoSConfig,
-    "rucola": RuCoLAConfig,
-}
+class RWSDConfig(DatasetConfig):
 
-TASK_TO_NAME = {
-    "rcb": "RCB",
-    "terra": "TERRa",
-    "danetqa": "DaNetQA",
-    "rwsd": "RWSD",
-    "lidirus": "LiDiRus",
-    "parus": "PARus",
-    "muserc": "MuSeRC",
-    "russe": "RUSSE",
-    "rucos": "RuCoS",
-    "rucola": "RuCoLA",
-}
+    best_metric: str = "accuracy"
+    num_classes: int = 2
 
-# TASK_TYPES = {
-#     "rcb": "classification",
-#     "terra": "classification",
-#     "danetqa": "classification",
-#     "rwsd": "span_classification",
-#     "lidirus": "classification",
-#     "parus": "classification",
-#     "muserc": "classification",
-#     "russe": "span_classification",
-#     "rucos": "entity_choice",
-#     "rucola": "classification",
-# }
+    @staticmethod
+    def process_data(examples, tokenizer: PreTrainedTokenizer, max_length: int):
+        text = examples["text"].translate(
+            str.maketrans({a: None for a in string.punctuation})
+        )
+        result = tokenizer(
+            text,
+            truncation="longest_first",
+            return_token_type_ids=True,
+            max_length=max_length,
+        )
 
-# TASK_NUM_CLASSES = {
-#     "rcb": 3,
-#     "terra": 2,
-#     "danetqa": 2,
-#     "rwsd": 2,
-#     "lidirus": 2,
-#     "parus": 2,
-#     "muserc": 2,
-#     "russe": 2,
-#     "rucos": 2,
-#     "rucola": 2,
-# }
+        e1_mask = np.zeros_like(result["input_ids"], dtype=int)
+        e2_mask = np.zeros_like(result["input_ids"], dtype=int)
 
-TASK_TYPES: Dict[str, str] = {
-    "rcb": "classification",
-    "terra": "classification",
-    "danetqa": "classification",
-    "rwsd": "classification",
-    "lidirus": "classification",
-    "parus": "classification",
-    "muserc": "classification",
-    "russe": "span_classification",
-    "rucos": "entity_choice",
-    "rucola": "classification",
-}
+        e1_span = examples["target"]["span1_text"]
+        e2_span = examples["target"]["span2_text"]
+        # Find the start and end indices of the spans in the input text
+        e1_start, e1_end = find_sub_list(e1_span.split(), text.split())
+        e2_start, e2_end = find_sub_list(e2_span.split(), text.split())
 
-TASK_NUM_CLASSES: Dict[str, int] = {
-    "rcb": 3,
-    "terra": 2,
-    "danetqa": 2,
-    "rwsd": 2,
-    "lidirus": 2,
-    "parus": 2,
-    "muserc": 2,
-    "russe": 2,
-    "rucos": 2,
-    "rucola": 2,
-}
+        if isinstance(e1_start, int) and isinstance(e1_end, int):
+            e1_mask[e1_start:e1_end] = 1
+
+        if isinstance(e2_start, int) and isinstance(e2_end, int):
+            e2_mask[e2_start:e2_end] = 1
+
+        result["e1_mask"] = e1_mask
+        result["e2_mask"] = e2_mask
+
+        if isinstance(examples["label"], list):
+            result["labels"] = [int(x) for x in examples["label"]]
+        else:
+            result["labels"] = int(examples["label"])
+
+        return result
+
+    def compute_metrics(self, predictions: EvalPrediction, split: str, **kwargs):
+        preds = np.argmax(predictions.predictions, axis=1)
+        return {
+            "accuracy": accuracy_score(
+                y_true=predictions.label_ids.astype(np.float32), y_pred=preds
+            )
+        }
 
 
-COLUMNS_TO_DROP: Dict[str, List[str]] = {
-    "rcb": ["premise", "label", "hypothesis", "verb", "negation", "genre"],
-    "terra": ["premise", "hypothesis", "label"],
-    "danetqa": ["question", "passage", "label"],
-}
+def find_sub_list(sublist: List[str], main_list: List[str]):
+    start, end = None, None
+    sublist_length = len(sublist)
+    for idx, word in enumerate(main_list):
+        if distance(word, sublist[0]) < 2:
+            start = idx
+            if main_list[idx : idx + sublist_length] == sublist:
+                end = idx + sublist_length
+                return start, end
+        if distance(word, sublist[-1]) < 2:
+            end = idx
+
+    if end is None:
+        end = start + len(sublist)
+    if start is None:
+        start = end - 1
+    return (start, end + 1) if start == end else (start, end)
 
 
 def load_data(task_name: str, data_path: str = "data/combined/") -> DatasetDict:
@@ -1176,7 +1174,123 @@ def load_data(task_name: str, data_path: str = "data/combined/") -> DatasetDict:
             f"Could not find required files for task '{task_name}' in directory '{data_path}'"
         )
 
-    train_dataset = Dataset.from_json(train_file)
-    val_dataset = Dataset.from_json(val_file)
+    if task_name != "muserc":
+        train_dataset = Dataset.from_json(train_file)
+        val_dataset = Dataset.from_json(val_file)
+
+    else:
+        with open(train_file, encoding="utf-8") as f:
+            train_list = [_row_to_dict(json.loads(line)) for line in f]
+        with open(val_file, encoding="utf-8") as f:
+            val_list = [_row_to_dict(json.loads(line)) for line in f]
+        train_dataset = Dataset.from_pandas(pd.DataFrame(data=train_list))
+        val_dataset = Dataset.from_pandas(pd.DataFrame(data=val_list))
 
     return DatasetDict(train=train_dataset, validation=val_dataset)
+
+
+def _cast_label(label: Union[str, bool, int]) -> str:
+    """Converts the label into the appropriate string version."""
+    if isinstance(label, str):
+        return label
+    elif isinstance(label, bool):
+        return "True" if label else "False"
+    elif isinstance(label, int):
+        assert label in (0, 1)
+        return str(label)
+    else:
+        raise ValueError("Invalid label format.")
+
+
+def _row_to_dict(row):
+    paragraph = row["passage"]
+    for question in paragraph["questions"]:
+        for answer in question["answers"]:
+            label = -1 if answer.get("label") is None else int(answer["label"])
+            return {
+                "paragraph": paragraph["text"],
+                "question": question["question"],
+                "answer": answer["text"],
+                "label": label,
+                "idx": {
+                    "paragraph": row["idx"],
+                    "question": question["idx"],
+                    "answer": answer["idx"],
+                },
+            }
+
+
+TASK_TO_CONFIG: Dict[str, Type[DatasetConfig]] = {
+    "rcb": RCBConfig,
+    "terra": TerraConfig,
+    "danetqa": DaNetQAConfig,
+    "lidirus": LiDiRusConfig,
+    "parus": PARusConfig,
+    "muserc": MuSeRCConfig,
+    "russe": RUSSEConfig,
+    "rucos": RuCoSConfig,
+    "rucola": RuCoLAConfig,
+    "rwsd": RWSDConfig,
+}
+
+TASK_TO_NAME: Dict[str, str] = {
+    "rcb": "RCB",
+    "terra": "TERRa",
+    "danetqa": "DaNetQA",
+    "rwsd": "RWSD",
+    "lidirus": "LiDiRus",
+    "parus": "PARus",
+    "muserc": "MuSeRC",
+    "russe": "RUSSE",
+    "rucos": "RuCoS",
+    "rucola": "RuCoLA",
+}
+
+TASK_TYPES: Dict[str, str] = {
+    "rcb": "classification",
+    "terra": "classification",
+    "danetqa": "classification",
+    "lidirus": "classification",
+    "parus": "classification",
+    "muserc": "classification",
+    "russe": "span_classification",
+    "rucos": "entity_choice",
+    "rucola": "classification",
+    "rwsd": "span_classification",
+}
+
+TASK_NUM_CLASSES: Dict[str, int] = {
+    "rcb": 3,
+    "terra": 2,
+    "danetqa": 2,
+    "rwsd": 2,
+    "lidirus": 2,
+    "parus": 2,
+    "muserc": 2,
+    "russe": 2,
+    "rucos": 2,
+    "rucola": 2,
+}
+
+
+COLUMNS_TO_DROP: Dict[str, List[str]] = {
+    "rcb": ["premise", "label", "hypothesis", "verb", "negation", "genre"],
+    "terra": ["premise", "hypothesis", "label"],
+    "danetqa": ["question", "passage", "label"],
+    "parus": ["premise", "choice1", "choice2", "question", "label", "idx"],
+    "muserc": ["paragraph", "question", "answer", "label"],
+    "russe": [
+        "idx",
+        "word",
+        "sentence1",
+        "sentence2",
+        "start1",
+        "end1",
+        "start2",
+        "end2",
+        "label",
+        "gold_sense1",
+        "gold_sense2",
+    ],
+    "rwsd": ["text", "target", "idx", "label"],
+}
