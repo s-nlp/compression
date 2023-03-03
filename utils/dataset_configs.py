@@ -16,6 +16,7 @@ from Levenshtein import distance
 from scipy.special import softmax
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import f1_score as f1_score_sklearn
+from sklearn.metrics import matthews_corrcoef
 from transformers import EvalPrediction, PreTrainedTokenizer
 
 f1_metric = evaluate.load("f1")
@@ -40,8 +41,8 @@ class DatasetConfig:
 
     Methods:
         process_data(examples, tokenizer, max_length): A static method for processing data examples before training.
-        compute_metrics(p, split): A method for computing evaluation metrics on model predictions.
-        process_predictions(p, split, **kwargs): A method for processing model predictions after inference.
+        compute_metrics(predictions, split): A method for computing evaluation metrics on model predictions.
+        process_predictions(predictions, split, **kwargs): A method for processing model predictions after inference.
 
     """
 
@@ -67,6 +68,8 @@ class DatasetConfig:
 
 
 class RCBConfig(DatasetConfig):
+    """Configuration class for the RCB dataset."""
+
     best_metric: str = "f1"
     num_classes: int = 3
 
@@ -75,7 +78,17 @@ class RCBConfig(DatasetConfig):
     @staticmethod
     def process_data(
         examples: List[str], tokenizer: PreTrainedTokenizer, max_length: int
-    ):
+    ) -> Dict[str, List[int]]:
+        """
+        Tokenizes a list of examples and returns a dictionary of tokenized inputs.
+        Args:
+            examples (List[dict]): A list of dictionaries containing the premise,
+                hypothesis, and label for each example.
+            tokenizer (PreTrainedTokenizer): A tokenizer object.
+            max_length (int): The maximum length of the tokenized inputs.
+        Returns:
+            dict: A dictionary of tokenized inputs.
+        """
         _label_to_index = {"entailment": 0, "contradiction": 1, "neutral": 2}
 
         result = tokenizer(
@@ -93,7 +106,9 @@ class RCBConfig(DatasetConfig):
             result["labels"] = _label_to_index[examples["label"]]
         return result
 
-    def compute_metrics(self, predictions: EvalPrediction, split: str, **kwargs):
+    def compute_metrics(
+        self, predictions: EvalPrediction, split: str, **kwargs
+    ) -> Dict[str, float]:
         preds = predictions.predictions.argmax(axis=1)
 
         return {
@@ -106,7 +121,9 @@ class RCBConfig(DatasetConfig):
             ),
         }
 
-    def process_predictions(self, predictions: np.ndarray, split: str, **kwargs):
+    def process_predictions(
+        self, predictions: np.ndarray, split: str, **kwargs
+    ) -> Dict[str, str]:
         predicted_labels = predictions.argmax(axis=1).tolist()
 
         return [
@@ -141,7 +158,7 @@ class TerraConfig(DatasetConfig):
     @staticmethod
     def process_data(
         examples: List[str], tokenizer: PreTrainedTokenizer, max_length: int
-    ):
+    ) -> Dict[str, List[int]]:
         """
         Tokenizes a list of examples and returns a dictionary with input IDs,
         token type IDs, and labels.
@@ -178,7 +195,9 @@ class TerraConfig(DatasetConfig):
             result["labels"] = _label_to_index[examples["label"]]
         return result
 
-    def compute_metrics(self, predictions: EvalPrediction, split: str, **kwargs):
+    def compute_metrics(
+        self, predictions: EvalPrediction, split: str, **kwargs
+    ) -> Dict[str, float]:
         """
         Computes and returns the accuracy of the model predictions.
 
@@ -196,7 +215,9 @@ class TerraConfig(DatasetConfig):
             )
         }
 
-    def process_predictions(self, predictions: np.ndarray, split: str, **kwargs):
+    def process_predictions(
+        self, predictions: np.ndarray, split: str, **kwargs
+    ) -> List[Dict[str, any]]:
 
         preds_list = predictions.argmax(axis=1).tolist()
 
@@ -215,7 +236,9 @@ class LiDiRusConfig(TerraConfig):
     num_classes: int = 2
 
     @staticmethod
-    def process_data(examples, tokenizer, max_length):
+    def process_data(
+        examples: Dict[str, str], tokenizer: PreTrainedTokenizer, max_length: int
+    ):
         _label_to_index = {"not_entailment": 0, "entailment": 1}
         result = tokenizer(
             examples["sentence1"],
@@ -229,7 +252,7 @@ class LiDiRusConfig(TerraConfig):
             result["labels"] = _label_to_index[examples["label"]]
         return result
 
-    def compute_metrics(self, predictions: EvalPrediction, **kwargs):
+    def compute_metrics(self, predictions: EvalPrediction, **kwargs) -> Dict[str, float]:
         """
         Computes and returns the accuracy of the model predictions.
 
@@ -338,7 +361,7 @@ class DaNetQAConfig(DatasetConfig):
         }
 
     def process_predictions(
-        self, preds: np.ndarray, split: str, **kwargs
+        self, predictions: np.ndarray, split: str, **kwargs
     ) -> List[Dict[str, Union[int, str]]]:
         """
         Processes the predictions returned by the model and returns a list of dictionaries containing the
@@ -353,11 +376,10 @@ class DaNetQAConfig(DatasetConfig):
                 the predicted label.
 
         """
-        preds_list = preds.argmax(axis=1).tolist()
 
         return [
             {"idx": idx, "label": str(bool(prediction)).lower()}
-            for idx, prediction in enumerate(preds_list)
+            for idx, prediction in enumerate(predictions.argmax(axis=1).tolist())
         ]
 
 
@@ -1126,8 +1148,9 @@ class RuCoLAConfig(DatasetConfig):
             result["labels"] = examples["acceptable"]
         return result
 
-    def compute_metrics(self, predictions: EvalPrediction, split: str, **kwargs):
-        preds = predictions.predictions.argmax(1)
+    def compute_metrics(
+        self, predictions: EvalPrediction, split: str, **kwargs
+    ) -> Dict[str, float]:
         """
         Computes the accuracy and Matthews correlation coefficient for the model
         predictions and returns them as a dictionary.
@@ -1142,10 +1165,12 @@ class RuCoLAConfig(DatasetConfig):
         """
         return {
             "accuracy": accuracy_score(
-                y_pred=preds, y_true=predictions.label_ids.astype(np.float32)
+                y_pred=predictions.predictions.argmax(1),
+                y_true=predictions.label_ids.astype(np.float32),
             ),
             "mcc": matthews_corrcoef(
-                y_pred=preds, y_true=predictions.label_ids.astype(np.float32)
+                y_pred=predictions.predictions.argmax(1),
+                y_true=predictions.label_ids.astype(np.float32),
             ),
         }
 
