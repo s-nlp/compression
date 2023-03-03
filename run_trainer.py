@@ -2,11 +2,11 @@ import json
 import os
 from argparse import ArgumentParser
 from functools import partial
-from shutil import rmtree
 
 import numpy as np
 import pandas as pd
 import transformers.utils.logging
+import wandb
 from datasets import Dataset, DatasetDict, load_dataset
 from transformers import (
     AutoModel,
@@ -18,8 +18,6 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import set_seed
-
-import wandb
 from utils.data_collators import FieldDataCollatorWithPadding
 from utils.dataset_configs import (
     COLUMNS_TO_DROP,
@@ -30,34 +28,6 @@ from utils.dataset_configs import (
     load_data,
 )
 from utils.russian_superglue_models import EntityChoiceModel, SpanClassificationModel
-
-# @dataclass
-# class ModelData:
-#     config: object
-#     tokenizer: object
-#     task_types: Dict[str, object]
-
-
-# MODEL_CLASSES: Dict[str, ModelData] = {
-#     "bert": ModelData(
-#         config=BertConfig,
-#         tokenizer=BertTokenizer,
-#         task_types={
-#             "classification": BertForSequenceClassification,
-#             "entity_choice": EntityChoiceModel,
-#             "span_classification": SpanClassificationModel,
-#         },
-#     ),
-#     "roberta": ModelData(
-#         config=RobertaConfig,
-#         tokenizer=RobertaTokenizer,
-#         task_types={
-#             "classification": AutoModelForSequenceClassification,
-#             "entity_choice": EntityChoiceModel,
-#             "span_classification": SpanClassificationModel,
-#         },
-#     ),
-# }
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -140,7 +110,7 @@ def main(args):
     if args.model_name_or_path is not None:
         tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
 
-    if args.task_name == "russe":
+    if args.task_name in ["russe", "rwsd"]:
         data_collator = FieldDataCollatorWithPadding(
             tokenizer,
             fields_to_pad=(("e1_mask", 0, 0), ("e2_mask", 0, 0)),
@@ -156,18 +126,18 @@ def main(args):
 
     if args.task_name == "rucos":
         # we're using a custom dataset, because the HF hub version has no information about entity indices
-        train = Dataset.from_json(["RuCoS/train.jsonl"])
-        val = Dataset.from_json(["RuCoS/val.jsonl"])
-        test = Dataset.from_json(["RuCoS/test.jsonl"])
+        train = Dataset.from_json("data/combined/RuCoS/train.jsonl")
+        val = Dataset.from_json("data/combined/RuCoS/val.jsonl")
+        test = Dataset.from_json("data/combined/RuCoS/test.jsonl")
         dataset = DatasetDict(train=train, validation=val, test=test)
     elif args.task_name == "rucola":
         train_df, in_domain_dev_df, out_of_domain_dev_df, test_df = map(
             pd.read_csv,
             (
-                "RuCoLA/in_domain_train.csv",
-                "RuCoLA/in_domain_dev.csv",
-                "RuCoLA/out_of_domain_dev.csv",
-                "RuCoLA/test.csv",
+                "combined/RuCoLA/in_domain_train.csv",
+                "combined/RuCoLA/in_domain_dev.csv",
+                "combined/RuCoLA/out_of_domain_dev.csv",
+                "combined/RuCoLA/test.csv",
             ),
         )
 
@@ -180,28 +150,17 @@ def main(args):
 
     config = TASK_TO_CONFIG[args.task_name](dataset)
 
-    if args.task_name != "rwsd":
-        processed_dataset = dataset.map(
-            partial(
-                config.process_data, tokenizer=tokenizer, max_length=args.max_seq_length
-            ),
-            num_proc=32,
-            keep_in_memory=True,
-            batched=True,
-            remove_columns=COLUMNS_TO_DROP[args.task_name],
-        )
-
-    else:
-        processed_dataset = dataset.map(
-            lambda x: config.process_data(
-                examples=x, tokenizer=tokenizer, max_length=255
-            ),
-            remove_columns=COLUMNS_TO_DROP[args.task_name],
-        )
-    # if "labels" in processed_dataset["test"].column_names:
-    #     test_without_labels = processed_dataset["test"].remove_columns(["labels"])
-    # else:
-    #     test_without_labels = processed_dataset["test"]
+    processed_dataset = dataset.map(
+        partial(
+            config.process_data,
+            tokenizer=tokenizer,
+            max_length=args.max_seq_length,
+        ),
+        num_proc=32,
+        keep_in_memory=True,
+        batched=args.task_name != "rwsd",
+        remove_columns=COLUMNS_TO_DROP[args.task_name],
+    )
 
     transformers.utils.logging.enable_progress_bar()
     model_name = (
@@ -211,7 +170,6 @@ def main(args):
     set_seed(args.seed)
 
     model = get_model(args)
-    print("MODEL LOADED")
     run = wandb.init(project="russian_superglue", name=model_name)
     run.config.update({"task": TASK_TO_NAME[args.task_name], "model": model_name})
 
@@ -233,40 +191,60 @@ def main(args):
         seed=args.seed,
         fp16=args.fp16,
         group_by_length=True,
-        # report_to="wandb",
+        report_to="wandb",
         run_name=model_name,
-        save_total_limit=1,
+        save_total_limit=2,
         load_best_model_at_end=True,
         metric_for_best_model=config.best_metric,
     )
 
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=processed_dataset["train"],
-        eval_dataset=processed_dataset["validation"],
-        compute_metrics=partial(
-            config.compute_metrics,
-            split="validation",
-            processed_dataset=processed_dataset["validation"],
-        ),
-        tokenizer=tokenizer,
-        data_collator=data_collator,
-    )
+    if args.task_name != "lidirus":
 
-    train_result = trainer.train()
-    print("train", train_result.metrics)
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=processed_dataset["train"],
+            eval_dataset=processed_dataset["validation"],
+            compute_metrics=partial(
+                config.compute_metrics,
+                split="validation",
+                processed_dataset=processed_dataset["validation"],
+            ),
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+        )
 
-    dev_predictions = trainer.predict(test_dataset=processed_dataset["validation"])
-    print("dev", dev_predictions.metrics)
+        train_result = trainer.train()
+        print("train", train_result.metrics)
+        trainer.log(train_result.metrics)
+        trainer.save_metrics("train", train_result.metrics)
 
-    run.summary.update(dev_predictions.metrics)
+        dev_predictions = trainer.predict(test_dataset=processed_dataset["validation"])
+        print("dev", dev_predictions.metrics)
+        trainer.log(dev_predictions.metrics)
+        trainer.save_metrics("dev", dev_predictions.metrics)
+
+        run.summary.update(dev_predictions.metrics)
+
+    else:
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            eval_dataset=processed_dataset,
+            compute_metrics=partial(
+                config.compute_metrics,
+                processed_dataset=processed_dataset,
+            ),
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+        )
+
+        dev_predictions = trainer.predict(test_dataset=processed_dataset)
+        print(dev_predictions.metrics)
+        trainer.save_metrics("dev", dev_predictions.metrics)
+
     wandb.finish()
-
     dev_metrics_per_run.append(dev_predictions.metrics[f"test_{config.best_metric}"])
-
-    if args.task_name != "terra":
-        rmtree(f"{args.output_dir}/{model_name}/{TASK_TO_NAME[args.task_name]}")
 
 
 if __name__ == "__main__":

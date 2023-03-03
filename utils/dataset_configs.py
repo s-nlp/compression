@@ -207,16 +207,45 @@ class TerraConfig(DatasetConfig):
 
 
 class LiDiRusConfig(TerraConfig):
+    """
+    A configuration class for LiDiRus diagnostic dataset.
+    """
+
+    best_metric: str = "accuracy"
+    num_classes: int = 2
+
     @staticmethod
     def process_data(examples, tokenizer, max_length):
+        _label_to_index = {"not_entailment": 0, "entailment": 1}
         result = tokenizer(
             examples["sentence1"],
             examples["sentence2"],
             return_token_type_ids=True,
             padding=False,
         )
-        result["labels"] = examples["label"]
+        if isinstance(examples["label"], list):
+            result["labels"] = [_label_to_index[x] for x in examples["label"]]
+        else:
+            result["labels"] = _label_to_index[examples["label"]]
         return result
+
+    def compute_metrics(self, predictions: EvalPrediction, **kwargs):
+        """
+        Computes and returns the accuracy of the model predictions.
+
+        Args:
+            predictions (EvalPrediction): The model predictions.
+            split (str): The split name.
+
+        Returns:
+            Dict[str, float]: A dictionary containing the accuracy of the model predictions.
+        """
+        return {
+            "accuracy": accuracy_score(
+                y_pred=predictions.predictions.argmax(axis=1),
+                y_true=predictions.label_ids.astype(np.float32),
+            )
+        }
 
 
 class DaNetQAConfig(DatasetConfig):
@@ -773,7 +802,7 @@ class RUSSEConfig(DatasetConfig):
         ]
 
 
-def normalize_answer(s):
+def normalize_answer(text):
     """Lower text and remove punctuation, articles and extra whitespace.
     From official ReCoRD eval script"""
 
@@ -790,12 +819,20 @@ def normalize_answer(s):
     def lower(text):
         return text.lower()
 
-    return white_space_fix(remove_articles(remove_punc(lower(s))))
+    return white_space_fix(remove_articles(remove_punc(lower(text))))
 
 
-def f1_score(prediction, ground_truth):
-    """Compute normalized token level F1
-    From official ReCoRD eval script"""
+def f1_score(prediction: str, ground_truth: str) -> float:
+    """
+    Compute normalized token level F1
+    From official ReCoRD eval script
+    Args:
+        prediction: The predicted text
+        ground_truth: The ground truth text
+
+    Returns:
+        The F1 score
+    """
     prediction_tokens = normalize_answer(prediction).split()
     ground_truth_tokens = normalize_answer(ground_truth).split()
     common = Counter(prediction_tokens) & Counter(ground_truth_tokens)
@@ -807,33 +844,76 @@ def f1_score(prediction, ground_truth):
     return (2 * precision * recall) / (precision + recall)
 
 
-def exact_match_score(prediction, ground_truth):
-    """Compute normalized exact match
+def exact_match_score(prediction: str, ground_truth: str) -> bool:
+    """
     From official ReCoRD eval script"""
+    """
+    Compute normalized exact match score
+
+    Args:
+        prediction: The predicted text
+        ground_truth: The ground truth text
+
+    Returns:
+        True if the predicted text exactly matches the ground truth, False otherwise.
+    """
     return normalize_answer(prediction) == normalize_answer(ground_truth)
 
 
-def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
-    """Compute max metric between prediction and each ground truth.
-    From official ReCoRD eval script"""
-    scores_for_ground_truths = []
-    for ground_truth in ground_truths:
-        score = metric_fn(prediction, ground_truth)
-        scores_for_ground_truths.append(score)
-    return max(scores_for_ground_truths)
+def metric_max_over_ground_truths(
+    metric_fn: callable, prediction: str, ground_truths: List[str]
+) -> float:
+    """
+    Compute max metric between prediction and each ground truth
+    From official ReCoRD eval script
+    Args:
+        metric_fn: The metric function to compute
+        prediction: The predicted text
+        ground_truths: A list of ground truth texts
+
+    Returns:
+        The maximum score between prediction and each ground truth.
+    """
+    return max(metric_fn(prediction, gt) for gt in ground_truths)
 
 
 class RuCoSConfig(DatasetConfig):
-    best_metric = "f1"
-    num_classes = 2
+    """
+    Configuration class for the RuCoS dataset.
+
+    Attributes:
+    ----------
+    best_metric : str
+        The best metric to use for model selection during training.
+    num_classes : int
+        The number of classes in the dataset.
+    PUNCTUATION_TO_REMOVE : str
+        A string of punctuation characters to remove from text.
+    """
+
+    best_metric: str = "f1"
+    num_classes: int = 2
 
     PUNCTUATION_TO_REMOVE = " " + string.punctuation
 
     @staticmethod
-    def _get_leading_trailing_spaces(x):
-        start_len = len(x)
-        len_lstrip = len(x.lstrip(RuCoSConfig.PUNCTUATION_TO_REMOVE))
-        len_rstrip = len(x.rstrip(RuCoSConfig.PUNCTUATION_TO_REMOVE))
+    def _get_leading_trailing_spaces(text):
+        """
+        Returns the number of leading and trailing spaces in a string.
+
+        Parameters:
+        ----------
+        text : str
+            The input string.
+
+        Returns:
+        -------
+        Tuple[int, int]
+            A tuple of two integers, the number of leading and trailing spaces in the input string.
+        """
+        start_len = len(text)
+        len_lstrip = len(text.lstrip(RuCoSConfig.PUNCTUATION_TO_REMOVE))
+        len_rstrip = len(text.rstrip(RuCoSConfig.PUNCTUATION_TO_REMOVE))
 
         return start_len - len_lstrip, start_len - len_rstrip
 
@@ -960,17 +1040,24 @@ class RuCoSConfig(DatasetConfig):
         return result
 
     def compute_metrics(
-        self, p: EvalPrediction, processed_dataset: datasets.Dataset, **kwargs
-    ):
-        preds = p.predictions
+        self, predictions: EvalPrediction, processed_dataset: datasets.Dataset, **kwargs
+    ) -> Dict[str, float]:
+        """
+        Compute F1 and EM metrics for the given predictions and dataset.
+        Args:
+            predictions (EvalPrediction): Object that contains the predictions and labels
+            processed_dataset (Dataset): Dataset with the entities and answers
 
-        predicted_entities = np.argmax(preds, axis=1)
+        Returns:
+            Dict[str, Any]: Dictionary with the F1 and EM metrics
+        """
 
+        predicted_entities = np.argmax(predictions.predictions, axis=1)
         text_entities = processed_dataset["entities"]
         text_answers = processed_dataset["answers"]
 
-        f1_values = []
-        em_values = []
+        f1_values: List[float] = []
+        exact_match_values: List[float] = []
 
         for pred_idx, entities, targets in zip(
             predicted_entities, text_entities, text_answers
@@ -978,15 +1065,17 @@ class RuCoSConfig(DatasetConfig):
             prediction = entities[pred_idx]["text"]
             target_texts = [answer["text"] for answer in targets]
 
-            f1 = metric_max_over_ground_truths(f1_score, prediction, target_texts)
-            f1_values.append(f1)
-
-            em = metric_max_over_ground_truths(
-                exact_match_score, prediction, target_texts
+            f1_values.append(
+                metric_max_over_ground_truths(f1_score, prediction, target_texts)
             )
-            em_values.append(em)
 
-        return {"f1": np.mean(f1_values), "em": np.mean(em_values)}
+            exact_match_values.append(
+                metric_max_over_ground_truths(
+                    exact_match_score, prediction, target_texts
+                )
+            )
+
+        return {"f1": np.mean(f1_values), "em": np.mean(exact_match_values)}
 
     def process_predictions(
         self, p: np.ndarray, processed_dataset: datasets.Dataset, **kwargs
@@ -1081,6 +1170,10 @@ class RuCoLAConfig(DatasetConfig):
 
 
 class RWSDConfig(DatasetConfig):
+    """
+    Configuration class for the RWSD dataset.
+    NOTE: the implementation of span masking is incomplete.
+    """
 
     best_metric: str = "accuracy"
     num_classes: int = 2
@@ -1095,6 +1188,7 @@ class RWSDConfig(DatasetConfig):
             truncation="longest_first",
             return_token_type_ids=True,
             max_length=max_length,
+            padding=False,
         )
 
         e1_mask = np.zeros_like(result["input_ids"], dtype=int)
@@ -1165,28 +1259,32 @@ def load_data(task_name: str, data_path: str = "data/combined/") -> DatasetDict:
         FileNotFoundError: If any of the required JSON files cannot be found.
 
     """
-    task_path = os.path.join(data_path, TASK_TO_NAME[task_name])
-    train_file = os.path.join(task_path, "train.jsonl")
-    val_file = os.path.join(task_path, "val.jsonl")
+    if task_name != "lidirus":
+        task_path = os.path.join(data_path, TASK_TO_NAME[task_name])
+        train_file = os.path.join(task_path, "train.jsonl")
+        val_file = os.path.join(task_path, "val.jsonl")
 
-    if not all(os.path.isfile(p) for p in [train_file, val_file]):
-        raise FileNotFoundError(
-            f"Could not find required files for task '{task_name}' in directory '{data_path}'"
-        )
+        if not all(os.path.isfile(p) for p in [train_file, val_file]):
+            raise FileNotFoundError(
+                f"Could not find required files for task '{task_name}' in directory '{data_path}'"
+            )
 
-    if task_name != "muserc":
-        train_dataset = Dataset.from_json(train_file)
-        val_dataset = Dataset.from_json(val_file)
+        if task_name != "muserc":
+            train_dataset = Dataset.from_json(train_file)
+            val_dataset = Dataset.from_json(val_file)
 
+        else:
+            with open(train_file, encoding="utf-8") as f:
+                train_list = [_row_to_dict(json.loads(line)) for line in f]
+            with open(val_file, encoding="utf-8") as f:
+                val_list = [_row_to_dict(json.loads(line)) for line in f]
+            train_dataset = Dataset.from_pandas(pd.DataFrame(data=train_list))
+            val_dataset = Dataset.from_pandas(pd.DataFrame(data=val_list))
+
+        return DatasetDict(train=train_dataset, validation=val_dataset)
     else:
-        with open(train_file, encoding="utf-8") as f:
-            train_list = [_row_to_dict(json.loads(line)) for line in f]
-        with open(val_file, encoding="utf-8") as f:
-            val_list = [_row_to_dict(json.loads(line)) for line in f]
-        train_dataset = Dataset.from_pandas(pd.DataFrame(data=train_list))
-        val_dataset = Dataset.from_pandas(pd.DataFrame(data=val_list))
-
-    return DatasetDict(train=train_dataset, validation=val_dataset)
+        task_path = os.path.join(data_path, "LiDiRus/LiDiRus.jsonl")
+        return Dataset.from_json(task_path)
 
 
 def _cast_label(label: Union[str, bool, int]) -> str:
@@ -1293,4 +1391,15 @@ COLUMNS_TO_DROP: Dict[str, List[str]] = {
         "gold_sense2",
     ],
     "rwsd": ["text", "target", "idx", "label"],
+    "rucos": ["passage", "qas"],
+    "lidirus": [
+        "idx",
+        "label",
+        "sentence1",
+        "sentence2",
+        "knowledge",
+        "logic",
+        "lexical-semantics",
+        "predicate-argument-structure",
+    ],
 }
