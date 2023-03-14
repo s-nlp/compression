@@ -6,7 +6,7 @@ from .fwsvd_compress_bert import compute_nd_replace_dense
 from .simple_svd import simple_svd_func, w_svd_func, w_svd_func_inv
 from .unstructured_prune import uns_prune
 from .structured_prune import str_prune
-from .drone import
+from .drone.drone import drone_bert
 
 from collections import OrderedDict
 MODEL_NAMES = OrderedDict(
@@ -25,6 +25,7 @@ MODEL_NAMES = OrderedDict(
         ("svd_ffn_w", "weight_svd_model"),
         ("svd_ffn_w_inv", "weight_svd_inv_model"),
         ("uns_prune", "unstructured_pruning"),
+        ("drone", "apply_drone_compress_bert")
     ])
 
 def apply_ttm_compress_bert_ffn(model, ranks, input_dims, output_dims):
@@ -66,8 +67,8 @@ def apply_fwsvd_compress_bert_ffn(model, dataloader, rank, device, use_baseline=
     print("="*50)
     return model
 
-def apply_drone_compress_bert(model, dataloader, rank, device):
-    model = drone(model, dataloader=dataloader, rank=rank, device=device)
+def apply_drone_compress_bert(model, dataloader, rank, device, dir_for_activations):
+    model = drone_bert(model, dataloader=dataloader, rank=rank, device=device, dir_for_activations=dir_for_activations)
 
     return model
 

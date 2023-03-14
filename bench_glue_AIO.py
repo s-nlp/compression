@@ -624,7 +624,7 @@ def main(tasks_):
     trainer.model.to('cuda')
 
     # Training
-    if training_args.do_train:
+    if training_args.do_train and False:
         checkpoint = None
         if training_args.resume_from_checkpoint is not None:
             checkpoint = training_args.resume_from_checkpoint
@@ -672,6 +672,9 @@ def main(tasks_):
             elif model_args.comp_func == "fwsvd_ffn":
                 trainer.model = model_def(trainer.model, trainer.get_train_dataloader(), rank=int(model_args.rank), 
                                           device="cuda:0", use_baseline=model_args.use_baseline, low_rank_method=model_args.low_rank_method)
+            elif model_args.comp_func == "drone":
+                trainer.model = model_def(trainer.model, trainer.get_train_dataloader(), rank=int(model_args.rank), device="cuda", 
+                                          dir_for_activations=f"/mnt/raid/seleznyov/{data_args.task_name}/{model_args.model_name_or_path}_activations/")
             else:
                 trainer.model = model_def(trainer.model, model_args.rank, weight_int=trainer.grad_bank_int_2, weight_out=trainer.grad_bank_out_2, weight_count=trainer.avg_counter)
             trainer.model.to('cuda')
@@ -801,9 +804,11 @@ def _mp_fn(index):
 ##BAD MANNERS
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
-    #tasks_ = ['stsb', 'cola','mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'] #  ,'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
-    tasks_ = ['cola']
+    #tasks_ = ['stsb', 'cola','mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
+    #tasks_ = ['stsb', 'cola', 'rte', 'wnli']
+    tasks_ = ['mnli', 'qnli', 'qqp', 'sst2']
     synth_bench()
+    #tasks_ = ['stsb']
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name")
