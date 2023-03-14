@@ -19,7 +19,7 @@ def ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, with_checkpoint
 
     if dataloader is not None:
         fisher_intermediate, fisher_output = estimate_fisher_weights_bert(model, dataloader, compute_full=False, device="cuda:0")
-    
+
     for i, layer in enumerate(encoder.layer):
         token_dim, hidden_dim = layer.intermediate.dense.weight.T.shape
 
@@ -37,13 +37,12 @@ def ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, with_checkpoint
             layer.intermediate.dense = tt_weight
 
         if dataloader is not None:
-            tt_weight = WeightedTTLinear(fisher_output[i], token_dim, hidden_dim, ranks, input_dims, output_dims)
+            tt_weight = WeightedTTLinear(fisher_output[i], hidden_dim, token_dim, ranks, output_dims, input_dims)
         else:
             # second linear layer has reversed dimensions,
             # so we swap input_dims and output_dims
-            tt_weight = TTLinear(token_dim, hidden_dim, ranks, input_dims, output_dims,)
+            tt_weight = TTLinear(hidden_dim, token_dim, ranks, output_dims, input_dims)
 
-        tt_weight = TTLinear(hidden_dim, token_dim, ranks, output_dims, input_dims,)
         tt_weight.set_from_linear(layer.output.dense)
 
         if with_checkpoints:
