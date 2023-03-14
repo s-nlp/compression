@@ -1,11 +1,19 @@
-from typing import Optional, Tuple
-
 import torch
 import torch.nn as nn
-from transformers import BertPreTrainedModel, PreTrainedModel, RobertaPreTrainedModel
+from transformers import PreTrainedModel
 
 
 class FCLayer(nn.Module):
+    """
+    A fully connected layer with an optional activation function and dropout.
+
+    Args:
+        input_dim (int): The number of input features.
+        output_dim (int): The number of output features.
+        dropout_rate (float, optional): The dropout rate to use. Defaults to 0.0.
+        use_activation (bool, optional): Whether to use an activation function. Defaults to True.
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -23,6 +31,15 @@ class FCLayer(nn.Module):
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
+        """
+        Perform a forward pass through the fully connected layer.
+
+        Args:
+            x (torch.Tensor): The input tensor.
+
+        Returns:
+            torch.Tensor: The output tensor.
+        """
         return self.layers(x)
 
 

@@ -19,7 +19,7 @@ from sklearn.metrics import f1_score as f1_score_sklearn
 from sklearn.metrics import matthews_corrcoef
 from transformers import EvalPrediction, PreTrainedTokenizer
 
-f1_metric = evaluate.load("f1")
+# f1_metric = evaluate.load("f1")
 
 
 def _quantize_max_length(max_length):

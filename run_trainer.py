@@ -6,9 +6,9 @@ from functools import partial
 import numpy as np
 import pandas as pd
 import transformers.utils.logging
-import wandb
-from datasets import Dataset, DatasetDict, load_dataset
+from datasets import Dataset, DatasetDict
 from transformers import (
+    AutoConfig,
     AutoModel,
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -18,6 +18,10 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import set_seed
+
+import wandb
+from utils.cofi_bert import CoFiBertForSequenceClassification, CoFiBertModel
+from utils.cofi_trainer import AdditionalArguments, CoFiTrainer
 from utils.data_collators import FieldDataCollatorWithPadding
 from utils.dataset_configs import (
     COLUMNS_TO_DROP,
@@ -27,7 +31,10 @@ from utils.dataset_configs import (
     TASK_TYPES,
     load_data,
 )
-from utils.russian_superglue_models import EntityChoiceModel, SpanClassificationModel
+from utils.l0_module import L0Module
+from utils.modeling import EntityChoiceModel, SpanClassificationModel
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -72,9 +79,6 @@ class NumpyEncoder(json.JSONEncoder):
         return obj.tolist() if isinstance(obj, np.ndarray) else super().default(obj)
 
 
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-
 def get_model(args) -> PreTrainedModel:
     """
     Initializes a correct model for a given task.
@@ -91,14 +95,28 @@ def get_model(args) -> PreTrainedModel:
     task_type = TASK_TYPES[args.task_name]
     num_classes = TASK_NUM_CLASSES[args.task_name]
 
-    if task_type == "span_classification":
-        return SpanClassificationModel(
-            backbone=AutoModel.from_pretrained(args.model_name_or_path),
-            num_labels=num_classes,
-        )
+    if args.do_cofi:
+        if task_type == "entity_choice":
+            return EntityChoiceModel(
+                backbone=CoFiBertModel.from_pretrained(args.model_name_or_path)
+            )
+        elif task_type == "span_classification":
+            return SpanClassificationModel(
+                backbone=CoFiBertModel.from_pretrained(args.model_name_or_path),
+                num_labels=num_classes,
+            )
+        else:
+            return CoFiBertForSequenceClassification.from_pretrained(
+                args.model_name_or_path, num_labels=num_classes
+            )
     elif task_type == "entity_choice":
         return EntityChoiceModel(
             backbone=AutoModel.from_pretrained(args.model_name_or_path)
+        )
+    elif task_type == "span_classification":
+        return SpanClassificationModel(
+            backbone=AutoModel.from_pretrained(args.model_name_or_path),
+            num_labels=num_classes,
         )
     else:
         return AutoModelForSequenceClassification.from_pretrained(
@@ -106,7 +124,7 @@ def get_model(args) -> PreTrainedModel:
         )
 
 
-def main(args):
+def main(args):  # sourcery skip: extract-duplicate-method
     if args.model_name_or_path is not None:
         tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
 
@@ -148,11 +166,11 @@ def main(args):
     else:
         dataset = load_data(task_name=args.task_name)
 
-    config = TASK_TO_CONFIG[args.task_name](dataset)
+    dataset_config = TASK_TO_CONFIG[args.task_name](dataset)
 
     processed_dataset = dataset.map(
         partial(
-            config.process_data,
+            dataset_config.process_data,
             tokenizer=tokenizer,
             max_length=args.max_seq_length,
         ),
@@ -191,14 +209,64 @@ def main(args):
         seed=args.seed,
         fp16=args.fp16,
         group_by_length=True,
-        report_to="wandb",
+        report_to="none",  # "wandb"
         run_name=model_name,
-        save_total_limit=2,
+        save_total_limit=1,
         load_best_model_at_end=True,
-        metric_for_best_model=config.best_metric,
+        metric_for_best_model=dataset_config.best_metric,
     )
 
-    if args.task_name != "lidirus":
+    if args.do_cofi:
+        additonal_args = AdditionalArguments()
+        l0_module = None
+        if args.cofi_pruning_type is not None:
+            l0_module = L0Module(
+                config=AutoConfig.from_pretrained(args.model_name_or_path)
+            )
+        if args.task_name != "lidirus":
+            trainer = CoFiTrainer(
+                model=model,
+                args=training_args,
+                train_dataset=processed_dataset["train"],
+                eval_dataset=processed_dataset["validation"],
+                compute_metrics=partial(
+                    dataset_config.compute_metrics,
+                    split="validation",
+                    processed_dataset=processed_dataset["validation"],
+                ),
+                tokenizer=tokenizer,
+                data_collator=data_collator,
+                l0_module=l0_module,
+                additional_args=additonal_args,
+            )
+            train_result = trainer.train()
+            print(train_result)
+            trainer.log(train_result.metrics)
+            trainer.save_metrics("train", train_result.metrics)
+
+            dev_predictions = trainer.predict(
+                test_dataset=processed_dataset["validation"]
+            )
+            trainer.log(dev_predictions.metrics)
+            trainer.save_metrics("dev", dev_predictions.metrics)
+
+            run.summary.update(dev_predictions.metrics)
+        else:
+            trainer = CoFiTrainer(
+                model=model,
+                args=training_args,
+                eval_dataset=processed_dataset,
+                compute_metrics=partial(
+                    dataset_config.compute_metrics,
+                    processed_dataset=processed_dataset,
+                ),
+                tokenizer=tokenizer,
+                data_collator=data_collator,
+                l0_module=l0_module,
+                additional_args=additonal_args,
+            )
+
+    elif args.task_name != "lidirus":
 
         trainer = Trainer(
             model=model,
@@ -206,7 +274,7 @@ def main(args):
             train_dataset=processed_dataset["train"],
             eval_dataset=processed_dataset["validation"],
             compute_metrics=partial(
-                config.compute_metrics,
+                dataset_config.compute_metrics,
                 split="validation",
                 processed_dataset=processed_dataset["validation"],
             ),
@@ -215,12 +283,10 @@ def main(args):
         )
 
         train_result = trainer.train()
-        print("train", train_result.metrics)
         trainer.log(train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
 
         dev_predictions = trainer.predict(test_dataset=processed_dataset["validation"])
-        print("dev", dev_predictions.metrics)
         trainer.log(dev_predictions.metrics)
         trainer.save_metrics("dev", dev_predictions.metrics)
 
@@ -232,7 +298,7 @@ def main(args):
             args=training_args,
             eval_dataset=processed_dataset,
             compute_metrics=partial(
-                config.compute_metrics,
+                dataset_config.compute_metrics,
                 processed_dataset=processed_dataset,
             ),
             tokenizer=tokenizer,
@@ -240,22 +306,17 @@ def main(args):
         )
 
         dev_predictions = trainer.predict(test_dataset=processed_dataset)
-        print(dev_predictions.metrics)
+        trainer.log(dev_predictions.metrics)
         trainer.save_metrics("dev", dev_predictions.metrics)
 
     wandb.finish()
-    dev_metrics_per_run.append(dev_predictions.metrics[f"test_{config.best_metric}"])
+    dev_metrics_per_run.append(
+        dev_predictions.metrics[f"test_{dataset_config.best_metric}"]
+    )
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument(
-        "--model_type",
-        default=None,
-        type=str,
-        required=True,
-        help="Model type (BERT or RoBERTa)",
-    )
     parser.add_argument(
         "--model_name_or_path",
         default=None,
@@ -276,6 +337,26 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="The output directory where the model predictions and checkpoints will be written.",
+    )
+
+    parser.add_argument(
+        "--do_cofi",
+        action="store_true",
+        help="Perform CoFi pruning",
+    )
+
+    parser.add_argument(
+        "--cofi_pruning_type",
+        default="structured_heads+structured_mlp+hidden+layer",
+        type=str,
+        help="Which type of CoFi pruning to use (could be 'structured_heads+structured_mlp+hidden+layer' or any combination)",
+    )
+
+    parser.add_argument(
+        "--target_sparsity",
+        type=float,
+        default=0.95,
+        help="Desired level of sparsity (a float from 0.0 to 0.99)",
     )
 
     # Other parameters
