@@ -1,4 +1,4 @@
-for model in "bert-base-uncased" #"facebook/bart-base" #bert-base-uncased "facebook/bart-base" #
+for model in "bert-base-uncased"
 do
 	for ranks in 10 60 110 160 210 260 310 360 410 460 510 560 610 660 710 760
 	do
