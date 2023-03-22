@@ -87,7 +87,7 @@ task_to_keys = {
 logger = logging.getLogger(__name__)
 
 
-class CustomTrainer(Trainer):
+class CustomTrainerBert(Trainer):
     def make_grad_bank(self, model):
         self.grad_bank_out_epoch = []
         self.grad_bank_int_epoch = []
@@ -266,15 +266,15 @@ class ModelArguments:
         default=150, 
         metadata={"help": "rank to compress"})
 
-    tt_ranks: Tuple[int, ...] = field(
+    tt_ranks: list[int] = field(
         default=(10,10,10),
         metadata={"help": "Ranks of TTm decomposition of weights"}
     )
-    tt_input_dims: Tuple[int, ...] = field(
+    tt_input_dims: list[int] = field(
         default=(4,6,8,4),
         metadata={"help": "Input dimensions in TTMatrix representation of weights"}
     )
-    tt_output_dims: Tuple[int, ...] = field(
+    tt_output_dims: list[int] = field(
         default=(8,8,6,8),
         metadata={"help": "Output dimensions in TTMatrix representation of weights"}
     )
@@ -297,8 +297,9 @@ def main(tasks_):
         model_args, data_args, training_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
 
     data_args.task_name = tasks_
-    #TODO: redo in os
-    training_args.output_dir=training_args.output_dir + training_args.run_name +'/' + tasks_
+    training_args.output_dir = os.path.join(training_args.output_dir, training_args.run_name, tasks_)
+    if training_args.resume_from_checkpoint is not None:
+        training_args.resume_from_checkpoint = os.path.join(training_args.resume_from_checkpoint, tasks_)
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -601,7 +602,7 @@ def main(tasks_):
 
     # Initialize our Trainer
     if not model_args.comp_func in ['none', None]:
-        trainer = CustomTrainer(
+        trainer = CustomTrainerBert(
             model=model,
             args=training_args,
             train_dataset=train_dataset if training_args.do_train else None,

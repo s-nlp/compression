@@ -4,7 +4,9 @@ from .head_pruning import random_head_pruning_model
 from .simple_svd import simple_svd_func, w_svd_func, w_svd_func_inv
 from .unstructured_prune import uns_prune
 from .structured_prune import str_prune
-from .ttm_compress_bert import ttm_compress_bert_ffn
+from .ttm.ttm_compress_bert import ttm_compress_bert_ffn
+from .ttm_daniel.ttm_alt_compress_bert import ttm_alt_compress_bert_ffn
+
 
 from collections import OrderedDict
 MODEL_NAMES = OrderedDict(
@@ -19,11 +21,38 @@ MODEL_NAMES = OrderedDict(
         ("svd_ffn_w", "weight_svd_model"),
         ("svd_ffn_w_inv", "weight_svd_inv_model"),
         ("uns_prune", "unstructured_pruning"),
-        ("ttm_ffn", "apply_ttm_compress_bert_ffn")
+        ("ttm_ffn", "apply_ttm_compress_bert_ffn"),
+        ("ttm_ffn_alt", "apply_alt_ttm_compress_bert_ffn"),
+        ("ttm_ffn_w_inv", "apply_ttm_compress_bert_ffn_w_inv"),
+        ("ttm_ffn_w", "apply_ttm_compress_bert_ffn_w"),
+        
     ])
 
+def dummy_self(model):
+    model = dummy_func(model)
+    return model
+
 def apply_ttm_compress_bert_ffn(model, ranks, input_dims, output_dims):
-    model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims)
+    model = ttm_alt_compress_bert_ffn(model, ranks, input_dims, output_dims)
+    return model
+
+def apply_alt_ttm_compress_bert_ffn(model, ranks, input_dims, output_dims):
+    model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, 
+                                  with_checkpoints=False)
+    return model
+
+def apply_ttm_compress_bert_ffn_w_inv(model, ranks, input_dims, output_dims, 
+                                weight_int, weight_out, weight_count):
+    
+    model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, False,
+                                weight_int, weight_out, weight_count, invasive=True)
+    return model
+
+def apply_ttm_compress_bert_ffn_w(model, ranks, input_dims, output_dims, 
+                                weight_int, weight_out, weight_count):
+    
+    model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, False,
+                                weight_int, weight_out, weight_count, invasive=False)
     return model
 
 def structured_pruning(model):
@@ -44,11 +73,6 @@ def weight_svd_model(model, rank = 150, weight_int=None, weight_out=None, weight
 
 def weight_svd_inv_model(model, rank = 150, weight_int=None, weight_out=None, weight_count=None):
     model = w_svd_func_inv(model, rank, weight_int, weight_out, weight_count)
-    return model
-
-
-def dummy_self(model):
-    model = dummy_func(model)
     return model
 
 def random_head_pruning(model):
