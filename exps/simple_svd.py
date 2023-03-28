@@ -95,7 +95,7 @@ def w_svd_func(model_to, svd_rank = 51, weight_int=None, weight_out=None, weight
         model_to.bert.encoder.layer[i].output.dense.lin2.bias.data.copy_(bias)
     return model_to
 
-def w_svd_func_inv(model_to, svd_rank = 51, weight_int=None, weight_out=None, weight_count=None):
+def w_svd_func_T(model_to, svd_rank = 51, weight_int=None, weight_out=None, weight_count=None):
     for i in range(model_to.config.num_hidden_layers):
         if weight_int is not None:
             weight_int_ = weight_int[i].sum(0)

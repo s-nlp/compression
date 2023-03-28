@@ -90,7 +90,8 @@ class TTLinear(nn.Module):
         shape = torch.Size((self.in_features, self.out_features))
         assert new_weights.shape == shape, f"Expected shape {shape}, got {new_weights.shape}"
 
-        self.weight = TTMatrix(new_weights, self.ranks, self.input_dims, self.output_dims)
+        self.weight = TTMatrix(new_weights, fisher_matrix,
+                               self.ranks, self.input_dims, self.output_dims)
         self.cores = nn.ParameterList([nn.Parameter(core) for core in self.weight.cores])
         self.weight.cores = self.cores
 

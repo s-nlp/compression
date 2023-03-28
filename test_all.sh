@@ -22,9 +22,9 @@ do
 				--evaluation_strategy 'epoch' \
 				--seed $random \
 				--output_dir './march_ttm_vs/' \
-                --resume_from_checkpoint /home/pletenev/compression_final_v2/data_bert_random_v2_512/bert-base-uncased-clean-$random \
+				--resume_from_checkpoint /home/pletenev/compression_final_v2/data_bert_random_v2_512/bert-base-uncased-clean-$random \
 				--do_train --do_eval --double_train \
-                --overwrite_output_dir
+				--overwrite_output_dir
 		done
 	done
 done

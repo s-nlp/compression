@@ -675,10 +675,7 @@ def main(tasks_):
             if model_args.comp_func in ["ttm_ffn", "ttm_ffn_alt"]:
                 trainer.model = model_def(trainer.model, model_args.tt_ranks, 
                                           model_args.tt_input_dims, model_args.tt_output_dims)
-            elif model_args.comp_func in ["ttm_ffn_w_inv","ttm_ffn_w"]:
-                print('='*10,'\n',model_args.tt_ranks,'='*10)
-                print('='*10,'\n',model_args.tt_input_dims,'='*10)
-                print('='*10,'\n',model_args.tt_output_dims,'='*10)
+            elif model_args.comp_func in ["ttm_ffn_w_inv","ttm_ffn_w", "ttm_ffn_alt_w"]:
                 trainer.model = model_def(trainer.model, model_args.tt_ranks, 
                                           model_args.tt_input_dims, model_args.tt_output_dims,
                                           weight_int=trainer.grad_bank_int_2, 

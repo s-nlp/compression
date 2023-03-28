@@ -69,7 +69,7 @@ class CustomTensor(object):
     def __init__(
             self,
             data: Union[torch.Tensor, np.ndarray, Sequence[torch.Tensor]],
-            #fdata: torch.Tensor,
+            fdata: torch.Tensor,
             Us: Optional[Union[torch.Tensor, Any]] = None,
             idxs: Optional[Any] = None,
             device: Optional[Any] = None,
@@ -259,7 +259,7 @@ class CustomTensor(object):
                         break
             else:
                 self.cores = _full_rank_tt(data, batch)
-                #self.fcores = _full_rank_tt(fdata, batch)
+                self.fcores = _full_rank_tt(fdata, batch)
                 #print ("self.cores shape", [core.shape for core in self.cores])
                 #print ("self.fcores shape", [fcore.shape for fcore in self.fcores])
                 self.Us = [None] * self.dim()
@@ -1684,19 +1684,20 @@ class CustomTensor(object):
             delta = delta.item()
 
         for mu in range(N - 1, 0, -1):
-            #I = tn.right_unfolding(self.fcores[mu], batch=self.batch)
+            I = tn.right_unfolding(self.fcores[mu], batch=self.batch)
             #print ("mu", mu)
             #print ("I unfold shape", I.shape)
             #print ("full sum of unfold", torch.sum(I))
             #print ("axis sum of unfold", torch.sum(I, 1))
-            #if (self.batch):
-            #    I = torch.diag(torch.sqrt(torch.sum(I, 2)))
-            #else:
-            #    I = torch.diag(torch.sqrt(torch.sum(I, 1)))
+            if (self.batch):
+                I = torch.diag(torch.sqrt(torch.sum(I, 2)))
+            else:
+                I = torch.diag(torch.sqrt(torch.sum(I, 1)))
             M = tn.right_unfolding(self.cores[mu], batch=self.batch)
-            #IM = I@M
+            M = I@M
             left, right = tn.truncated_svd(M, delta=delta, rmax=rmax[mu - 1], left_ortho=False, algorithm=algorithm, verbose=verbose, batch=self.batch)
-            #left = torch.linalg.inv(I)@left
+            left = torch.linalg.inv(I) @ left
+            
             if self.batch:
                 self.cores[mu] = right.reshape([self.cores[mu].shape[0], -1, self.cores[mu].shape[2], self.cores[mu].shape[3]])
                 self.cores[mu - 1] = torch.einsum('bijk,bkl->bijl', (self.cores[mu - 1], left))  # Pass factor to the left

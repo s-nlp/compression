@@ -20,7 +20,7 @@ class TTMatrix:
     def __init__(
             self,
             t: Union[torch.Tensor, List[torch.Tensor]],
-            #fisher_matrix: torch.Tensor,
+            fisher_matrix: torch.Tensor,
             ranks: List[int],
             input_dims: List[int],
             output_dims: List[int]):
@@ -61,7 +61,7 @@ class TTMatrix:
 
         if self.batch:
             tensor = M.reshape([-1] + list(input_dims) + list(output_dims))
-            #fisher_tensor = fisher_matrix.reshape([-1] + list(input_dims) + list(output_dims))
+            fisher_tensor = fisher_matrix.reshape([-1] + list(input_dims) + list(output_dims))
             dims = list(range(1, 2 * self.d + 1))
             # Note: tensor is now a reshape of matrix with dimesions stored as
             # b x i_0 x j_0, ..., i_{d - 1} x j_{d - 1}
@@ -69,24 +69,24 @@ class TTMatrix:
             new_dims: List[int] = torch.tensor([0] + list(zip(dims[:self.d], dims[self.d:]))).flatten().tolist()
         else:
             tensor = M.reshape(list(input_dims) + list(output_dims))
-            #fisher_tensor = fisher_matrix.reshape(list(input_dims) + list(output_dims))
+            fisher_tensor = fisher_matrix.reshape(list(input_dims) + list(output_dims))
             dims = list(range(2 * self.d))
             # Note: tensor is now a reshape of matrix with dimesions stored as
             # i_0 x j_0, ..., i_{d - 1} x j_{d - 1}
 
             new_dims: List[int] = torch.tensor(list(zip(dims[:self.d], dims[self.d:]))).flatten().tolist()
         tensor = tensor.permute(new_dims)
-        #fisher_tensor = fisher_tensor.permute(new_dims)
+        fisher_tensor = fisher_tensor.permute(new_dims)
         
         if self.batch:
             tensor = tensor.reshape([-1] + [input_dims[i] * output_dims[i] for i in range(self.d)])
-            #fisher_tensor = fisher_tensor.reshape([-1] + [input_dims[i] * output_dims[i] for i in range(self.d)])
+            fisher_tensor = fisher_tensor.reshape([-1] + [input_dims[i] * output_dims[i] for i in range(self.d)])
         else:
             tensor = tensor.reshape([input_dims[i] * output_dims[i] for i in range(self.d)])
-            #fisher_tensor = fisher_tensor.reshape([input_dims[i] * output_dims[i] for i in range(self.d)])
+            fisher_tensor = fisher_tensor.reshape([input_dims[i] * output_dims[i] for i in range(self.d)])
         #print ("tensor.shape, fisher_tensor.shape ranks", tensor.shape, fisher_tensor.shape, ranks)
-        #tt = CustomTensor(tensor, fisher_tensor, ranks_tt=ranks, batch=self.batch)
-        tt = CustomTensor(tensor, ranks_tt=ranks, batch=self.batch)
+        tt = CustomTensor(tensor, fisher_tensor, ranks_tt=ranks, batch=self.batch)
+        #tt = CustomTensor(tensor, ranks_tt=ranks, batch=self.batch)
         self.ranks = tt.ranks_tt[1:-1]
         
 
