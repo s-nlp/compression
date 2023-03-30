@@ -5,7 +5,7 @@
 import torch
 import tntorch as tn
 from typing import Any, Optional, List, Sequence, Union
-from .ttensor_fisher import CustomTensor
+from ttensor_fisher import CustomTensor
 
 
 class TTMatrix:
@@ -84,9 +84,8 @@ class TTMatrix:
         else:
             tensor = tensor.reshape([input_dims[i] * output_dims[i] for i in range(self.d)])
             fisher_tensor = fisher_tensor.reshape([input_dims[i] * output_dims[i] for i in range(self.d)])
-        #print ("tensor.shape, fisher_tensor.shape ranks", tensor.shape, fisher_tensor.shape, ranks)
+        print ("tensor.shape, fisher_tensor.shape ranks", tensor.shape, fisher_tensor.shape, ranks)
         tt = CustomTensor(tensor, fisher_tensor, ranks_tt=ranks, batch=self.batch)
-        #tt = CustomTensor(tensor, ranks_tt=ranks, batch=self.batch)
         self.ranks = tt.ranks_tt[1:-1]
         
 
@@ -96,11 +95,11 @@ class TTMatrix:
             core.reshape(core.shape[0], input_dims[i], output_dims[i], core.shape[-1])
             for i, core in enumerate(tt.cores)]
         
-        #self.fcores = [
-        #    core.reshape(-1, core.shape[1], input_dims[i], output_dims[i], core.shape[-1])
-        #    if self.batch else
-        #    core.reshape(core.shape[0], input_dims[i], output_dims[i], core.shape[-1])
-        #    for i, core in enumerate(tt.fcores)]
+        self.fcores = [
+            core.reshape(-1, core.shape[1], input_dims[i], output_dims[i], core.shape[-1])
+            if self.batch else
+            core.reshape(core.shape[0], input_dims[i], output_dims[i], core.shape[-1])
+            for i, core in enumerate(tt.fcores)]
 
     def torch(self):
         """
