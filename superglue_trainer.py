@@ -934,4 +934,4 @@ if __name__ == "__main__":
 
     for task_ in tasks_:
         path_to = main(task_)
-    OverallTable(os.path.join(args_alt.output_dir, args_alt.run_name,'..'), 'results.csv')
+    OverallTable(os.path.join(args_alt.output_dir, args_alt.run_name,'..'), 'results.csv', 'superglue')
