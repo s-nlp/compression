@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,result
+roberta-base,1,128,0.0068
+roberta-base,16,128,0.0343
+roberta-base,32,128,0.0644

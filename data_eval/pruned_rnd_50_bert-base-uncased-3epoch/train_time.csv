@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,result
+pruned_rnd_50_bert-base-uncased,1,128,0.0294
+pruned_rnd_50_bert-base-uncased,16,128,0.0756
+pruned_rnd_50_bert-base-uncased,32,128,0.1424

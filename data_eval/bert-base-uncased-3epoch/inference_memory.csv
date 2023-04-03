@@ -1,0 +1,4 @@
+model,batch_size,sequence_length,used_cpu,used_cpumem,used_gpu,used_gpumem
+bert-base-uncased,1,128,0.7770,2263.0000,5.0000,1497.0000
+bert-base-uncased,16,128,0.7750,2263.0000,6.5000,2055.0000
+bert-base-uncased,32,128,0.7750,2263.0000,18.5000,2635.0000
