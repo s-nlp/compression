@@ -4,7 +4,7 @@ do
 	do
 		for random in 39512 #297104 585534 743580 814084
 		do
-			CUDA_VISIBLE_DEVICES=2 python glue_trainer.py \
+			CUDA_VISIBLE_DEVICES=0 python glue_trainer.py \
 				--model_name_or_path $model  \
 				--run_name $model-ttm_ffn_ttm4-$ranks-$random \
 				--comp_func 'ttm_ffn'  --rank $ranks \
