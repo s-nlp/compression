@@ -32,12 +32,14 @@ from datetime import datetime
 import datasets
 import numpy as np
 from datasets import load_dataset
+from tasksource import load_task
 
 import evaluate
 import transformers
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
+    AutoModelForMultipleChoice,
     AutoTokenizer,
     DataCollatorWithPadding,
     EvalPrediction,
@@ -73,19 +75,17 @@ check_min_version("4.23.0.dev0")
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/text-classification/requirements.txt")
 
 task_to_keys = {
-    "cola": ("sentence", None),
-    "mnli": ("premise", "hypothesis"),
-    "mrpc": ("sentence1", "sentence2"),
-    "qnli": ("question", "sentence"),
-    "qqp": ("question1", "question2"),
-    "rte": ("sentence1", "sentence2"),
-    "sst2": ("sentence", None),
-    "stsb": ("sentence1", "sentence2"),
-    "wnli": ("sentence1", "sentence2"),
+    "multirc": ("sentence1", None),
+    "boolq": ("sentence1", None),
+    "rte": ("premise", "hypothesis"),
+    "cb": ("sentence1", "sentence2"),
+    "wic": ("sentence1", "sentence2"),
+    "axg": ("sentence1", "sentence2"),
+    "copa": ("not", "using"),
+    "wsc": ("text", None),
 }
 
 logger = logging.getLogger(__name__)
-
 
 class CustomTrainerBert(Trainer):
     def make_grad_bank(self, model):
@@ -113,6 +113,32 @@ class CustomTrainerBert(Trainer):
         self.avg_counter+=1
         return loss.detach()
 
+class ProcessorWSC:
+    def __init__(self, tokenizer):
+        super().__init__()
+        self.tokenizer = tokenizer
+
+    def tokenize(self, tokens, ss, se, os, oe):
+        sents = []
+
+        for i_t, token in enumerate(tokens):
+            tokens_wordpiece = self.tokenizer.tokenize(token)
+
+            if i_t == ss:
+                new_ss = len(sents)
+                tokens_wordpiece = ['@'] + tokens_wordpiece
+            if i_t == se:
+                tokens_wordpiece = tokens_wordpiece + ['@']
+            if i_t == os:
+                new_os = len(sents)
+                tokens_wordpiece = ["*"] + tokens_wordpiece
+            if i_t == oe:
+                tokens_wordpiece = tokens_wordpiece + ["*"]
+            sents.extend(tokens_wordpiece)
+
+        return ' '.join(sents).replace(' ##','')
+
+
 @dataclass
 class DataTrainingArguments:
     """
@@ -124,7 +150,7 @@ class DataTrainingArguments:
     """
 
     task_name: Optional[str] = field(
-        default='cola',
+        default='cb',
         metadata={"help": "The name of the task to train on: " + ", ".join(task_to_keys.keys())},
     )
     dataset_name: Optional[str] = field(
@@ -204,11 +230,11 @@ class DataTrainingArguments:
         if self.task_name is not None:
             self.task_name = self.task_name.lower()
             if self.task_name not in task_to_keys.keys():
-                raise ValueError("Unknown task, you should pick one in " + ",".join(task_to_keys.keys()))
+                raise ValueError(self.task_name, "Unknown task, you should pick one in " + ",".join(task_to_keys.keys()))
         elif self.dataset_name is not None:
             pass
         elif self.train_file is None or self.validation_file is None:
-            raise ValueError("Need either a GLUE task, a training/validation file or a dataset name.")
+            raise ValueError("Need either a SuperGLUE task, a training/validation file or a dataset name.")
         else:
             train_extension = self.train_file.split(".")[-1]
             assert train_extension in ["csv", "json"], "`train_file` should be a csv or a json file."
@@ -267,15 +293,15 @@ class ModelArguments:
         metadata={"help": "rank to compress"})
 
     tt_ranks: list[int] = field(
-        default=(10,10,10),
+        default_factory=lambda:[10,10],
         metadata={"help": "Ranks of TTm decomposition of weights"}
     )
     tt_input_dims: list[int] = field(
-        default=(4,6,8,4),
+        default_factory=lambda:[8,12,8],
         metadata={"help": "Input dimensions in TTMatrix representation of weights"}
     )
     tt_output_dims: list[int] = field(
-        default=(8,8,6,8),
+        default_factory=lambda:[12,16,16],
         metadata={"help": "Output dimensions in TTMatrix representation of weights"}
     )
 
@@ -297,6 +323,7 @@ def main(tasks_):
         model_args, data_args, training_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
 
     data_args.task_name = tasks_
+    print(data_args.task_name)
     training_args.output_dir = os.path.join(training_args.output_dir, training_args.run_name, tasks_)
     if training_args.resume_from_checkpoint is not None:
         training_args.resume_from_checkpoint = os.path.join(training_args.resume_from_checkpoint, tasks_)
@@ -356,14 +383,19 @@ def main(tasks_):
     #
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
-    if data_args.task_name is not None:
-        # Downloading and loading a dataset from the hub.
+    if data_args.task_name in ['copa', 'rte', 'wsc']:
         raw_datasets = load_dataset(
-            "glue",
-            data_args.task_name,
+            "super_glue",
+            data_args.task_name if data_args.task_name != 'wsc' else 'wsc.fixed',
             cache_dir=model_args.cache_dir,
             use_auth_token=True if model_args.use_auth_token else None,
         )
+
+    elif data_args.task_name is not None:
+        raw_datasets = load_task(
+            'super_glue/'+data_args.task_name)
+        raw_datasets = raw_datasets.rename_column('labels','label')
+
     elif data_args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
         raw_datasets = load_dataset(
@@ -457,15 +489,26 @@ def main(tasks_):
             tokenizer.pad_token = tokenizer.eos_token
             config.pad_token_id = config.eos_token_id
 
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
-        ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
-    )
+    if data_args.task_name == 'copa':
+        model = AutoModelForMultipleChoice.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
 
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
@@ -534,13 +577,42 @@ def main(tasks_):
             result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
         return result
 
+    def preprocess_function_copa(examples):
+        first_sentences = []
+        second_sentences = []
+        for indx, line in enumerate(examples['question']):
+            if line == 'effect':
+                first_sentences += [examples['premise'][indx], examples['premise'][indx]]
+                second_sentences += [examples['choice1'][indx], examples['choice2'][indx]]
+            else:
+                first_sentences += [examples['choice1'][indx], examples['choice2'][indx]]
+                second_sentences += [examples['premise'][indx], examples['premise'][indx]]
+
+        tokenized_examples = tokenizer(first_sentences, second_sentences, truncation=True)
+
+        return {k: [v[i : i + 2] for i in range(0, len(v), 2)] for k, v in tokenized_examples.items()}
+
+    def preprocess_function_wsc(examples):
+        first_sentence = WSC_preprocess.tokenize(tokens=examples['text'].split(' '),
+                   ss=examples['span1_index'], se=(examples['span1_index']+len(examples['span1_text'].split(' '))-1),
+                   os=examples['span2_index'], oe=(examples['span2_index']+len(examples['span2_text'].split(' '))-1)
+                   )
+    
+        return {'text':first_sentence}
+
+    #TODO:bad optimization code, need to be batched
+    if data_args.task_name == 'wsc':
+        WSC_preprocess = ProcessorWSC(tokenizer)
+        raw_datasets = raw_datasets.map(preprocess_function_wsc, batched=False)
+
     with training_args.main_process_first(desc="dataset map pre-processing"):
         raw_datasets = raw_datasets.map(
-            preprocess_function,
+            preprocess_function if data_args.task_name != 'copa' else preprocess_function_copa,
             batched=True,
             load_from_cache_file=not data_args.overwrite_cache,
             desc="Running tokenizer on dataset",
         )
+
     if training_args.do_train:
         if "train" not in raw_datasets:
             raise ValueError("--do_train requires a train dataset")
@@ -571,8 +643,8 @@ def main(tasks_):
             logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # Get the metric function
-    if data_args.task_name is not None:
-        metric = evaluate.load("glue", data_args.task_name)
+    if False: #data_args.task_name is not None:
+        metric = evaluate.load("super_glue", data_args.task_name)
     else:
         metric = evaluate.load("accuracy")
 
@@ -591,6 +663,41 @@ def main(tasks_):
         else:
             return {"accuracy": (preds_ == p.label_ids).astype(np.float32).mean().item()}
 
+    from transformers.tokenization_utils_base import PreTrainedTokenizerBase, PaddingStrategy
+    from typing import Optional, Union
+    @dataclass
+    class DataCollatorForMultipleChoice:
+        """
+        Data collator that will dynamically pad the inputs for multiple choice received.
+        """
+
+        tokenizer: PreTrainedTokenizerBase
+        padding: Union[bool, str, PaddingStrategy] = True
+        max_length: Optional[int] = None
+        pad_to_multiple_of: Optional[int] = None
+
+        def __call__(self, features):
+            label_name = "label" if "label" in features[0].keys() else "labels"
+            labels = [feature.pop(label_name) for feature in features]
+            batch_size = len(features)
+            num_choices = len(features[0]["input_ids"])
+            flattened_features = [
+                [{k: v[i] for k, v in feature.items()} for i in range(num_choices)] for feature in features
+            ]
+            flattened_features = sum(flattened_features, [])
+
+            batch = self.tokenizer.pad(
+                flattened_features,
+                padding=self.padding,
+                max_length=self.max_length,
+                pad_to_multiple_of=self.pad_to_multiple_of,
+                return_tensors="pt",
+            )
+
+            batch = {k: v.view(batch_size, num_choices, -1) for k, v in batch.items()}
+            batch["labels"] = torch.tensor(labels, dtype=torch.int64)
+            return batch
+
     # Data collator will default to DataCollatorWithPadding when the tokenizer is passed to Trainer, so we change it if
     # we already did the padding.
     if data_args.pad_to_max_length:
@@ -599,6 +706,10 @@ def main(tasks_):
         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
     else:
         data_collator = None
+
+    if data_args.task_name == 'copa':
+        data_collator = DataCollatorForMultipleChoice(tokenizer)
+
 
     # Initialize our Trainer
     if not model_args.comp_func in ['none', None]:
@@ -612,6 +723,15 @@ def main(tasks_):
             data_collator=data_collator,
         )
         trainer.make_grad_bank(model)
+
+        import pickle
+        with open(os.path.join(training_args.resume_from_checkpoint,'weight_dict.pickle'), 'rb') as ff:
+            mass = pickle.load(ff)
+        trainer.grad_bank_int_2 = mass['weight_int']
+        trainer.grad_bank_out_2 = mass['weight_out']
+        trainer.avg_counter = mass['weight_count']
+
+
     else:
         trainer = Trainer(
             model=model,
@@ -660,14 +780,22 @@ def main(tasks_):
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
         if not model_args.comp_func in ['none', None]:
-
             def_class = MODEL_NAMES[model_args.comp_func]
             class_module = __import__("exps.models", fromlist=[def_class])
             model_def = getattr(class_module, def_class)
-            if model_args.comp_func == "ttm_ffn":
-                trainer.model = model_def(trainer.model, model_args.tt_ranks, model_args.tt_input_dims, model_args.tt_output_dims)
+            if model_args.comp_func in ["ttm_ffn", "ttm_ffn_alt"]:
+                trainer.model = model_def(trainer.model, model_args.tt_ranks, 
+                                          model_args.tt_input_dims, model_args.tt_output_dims)
+            elif model_args.comp_func in ["ttm_ffn_w_inv","ttm_ffn_w", "ttm_ffn_alt_w"]:
+                trainer.model = model_def(trainer.model, model_args.tt_ranks, 
+                                          model_args.tt_input_dims, model_args.tt_output_dims,
+                                          weight_int=trainer.grad_bank_int_2, 
+                                          weight_out=trainer.grad_bank_out_2, 
+                                          weight_count=trainer.avg_counter)
             else:
-                trainer.model = model_def(trainer.model, model_args.rank, weight_int=trainer.grad_bank_int_2, weight_out=trainer.grad_bank_out_2, weight_count=trainer.avg_counter)
+                trainer.model = model_def(trainer.model, model_args.rank, 
+                                          weight_int=trainer.grad_bank_int_2, weight_out=trainer.grad_bank_out_2, 
+                                          weight_count=trainer.avg_counter)
                 #trainer.model = model_def(trainer.model, model_args.rank)
             trainer.model.to('cuda')
 
@@ -796,9 +924,8 @@ def _mp_fn(index):
 ##BAD MANNERS
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
-    #tasks_ = ['cola']#,'stsb', 'mrpc', 'rte', 'wnli']
-    tasks_ = ['stsb', 'cola','mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'] #  ,'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
-    #synth_bench()
+    tasks_ = ['copa', 'multirc', 'rte', 'boolq', 'cb', 'wic', 'wsc'] #  ,'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
+    synth_bench()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name")

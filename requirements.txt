@@ -11,3 +11,4 @@ psutil
 py3nvml
 tensorly
 tntorch
+tasksource
