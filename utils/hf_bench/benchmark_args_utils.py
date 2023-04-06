@@ -56,11 +56,11 @@ class BenchmarkArguments:
     rank: int = field(default=150, metadata={"help": "rank of data"})
     use_baseline: bool = field(default=False, metadata={"help": "set Ficher information in FWSVD to torch.ones"})
     tt_input_dims: Tuple[int, ...] = field(
-        default=(4,6,8,4),
+        default=(12,2,2,16),
         metadata={"help": "Input dimensions in TTMatrix representation of weights"}
     )
     tt_output_dims: Tuple[int, ...] = field(
-        default=(8,8,6,8),
+        default=(32,3,2,16),
         metadata={"help": "Output dimensions in TTMatrix representation of weights"}
     )
     batch_sizes: List[int] = list_field(
@@ -149,11 +149,11 @@ class BenchmarkArguments:
         metadata={"help": "Ranks of TTm decomposition of weights"}
     )
     tt_input_dims: Tuple[int, ...] = field(
-        default=(4,6,8,4),
+        default=(12,2,2,16),
         metadata={"help": "Input dimensions in TTMatrix representation of weights"}
     )
     tt_output_dims: Tuple[int, ...] = field(
-        default=(8,8,6,8),
+        default=(32,3,2,16),
         metadata={"help": "Output dimensions in TTMatrix representation of weights"}
     )
 

@@ -111,7 +111,7 @@ class PyTorchBenchmark(Benchmark):
                     #def_class = MODEL_WITH_LM_HEAD_MAPPING[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
-                    
+
                     if self.args.exp_name in ["ttm_ffn", "weighted_ttm_ffn"]:
                         # make list of equal tensor ranks
                         # e.g. if tt_input_dims is [4,6,8,4], produces [rank, rank, rank]
@@ -127,7 +127,7 @@ class PyTorchBenchmark(Benchmark):
                         model = model_def(model_cls(config), int(self.args.rank))
                     else:
                         model = model_def(model_cls(config), int(self.args.rank))
-                    
+
 
                 else:
                     model = model_cls(config)

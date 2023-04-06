@@ -107,7 +107,7 @@ class CustomTrainer(Trainer):
 
             self.grad_bank_out[layer] += model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() #(model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() **2).sum(0)
             self.grad_bank_int[layer] += model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() #(model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() **2).sum(0)
-        
+
             self.grad_bank_out_2[layer] += model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu()**2 #(model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() **2).sum(0)
             self.grad_bank_int_2[layer] += model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu()**2 #(model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() **2).sum(0)
         self.avg_counter+=1
@@ -263,7 +263,7 @@ class ModelArguments:
         metadata={"help": "Compression function to be used on finetuned model"}
     )
     rank: int = field(
-        default=150, 
+        default=150,
         metadata={"help": "rank to compress"})
 
     tt_ranks: Tuple[int, ...] = field(
@@ -271,11 +271,11 @@ class ModelArguments:
         metadata={"help": "Ranks of TTm decomposition of weights"}
     )
     tt_input_dims: Tuple[int, ...] = field(
-        default=(4,6,8,4),
+        default=(12,2,2,16),
         metadata={"help": "Input dimensions in TTMatrix representation of weights"}
     )
     tt_output_dims: Tuple[int, ...] = field(
-        default=(8,8,6,8),
+        default=(32,3,2,16),
         metadata={"help": "Output dimensions in TTMatrix representation of weights"}
     )
 
@@ -342,7 +342,7 @@ def main(tasks_):
 
     # Set seed before initializing model.
     set_seed(training_args.seed)
-    
+
     # Get the datasets: you can either provide your own CSV/JSON training and evaluation files (see below)
     # or specify a GLUE benchmark task (the dataset will be downloaded automatically from the datasets Hub).
     #
@@ -451,7 +451,7 @@ def main(tasks_):
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    
+
     if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
             config.pad_token_id = config.eos_token_id
@@ -745,17 +745,17 @@ def main(tasks_):
                 metrics = {k + "_mm": v for k, v in metrics.items()}
             if task is not None and "mnli" in task:
                 combined.update(metrics)
-                
+
             size_of = trainer.model.get_memory_footprint()
             param_of = sum(p.numel() for p in trainer.model.parameters())
             metrics.update({'size_of':size_of})
             metrics.update({'param_of':param_of})
 
-            
+
             if task is not None and "mnli" in task:
                 combined.update({'size_of':size_of})
                 combined.update({'param_of':param_of})
-                
+
             trainer.log_metrics("bench_", metrics)
             trainer.save_metrics("bench_0", combined if task is not None and "mnli" in task else metrics)
 
@@ -805,10 +805,9 @@ def _mp_fn(index):
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
     #tasks_ = ['stsb', 'cola','mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli']
-    #tasks_ = ['stsb', 'cola', 'rte', 'wnli']
-    tasks_ = ['mnli', 'qnli', 'qqp', 'sst2']
+    tasks_ = ['stsb', 'cola', 'rte', 'wnli']
+    #tasks_ = ['mnli', 'qnli', 'qqp', 'sst2']
     synth_bench()
-    #tasks_ = ['stsb']
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name")
