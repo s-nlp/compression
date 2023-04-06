@@ -113,10 +113,7 @@ class PyTorchBenchmark(Benchmark):
                     model_def = getattr(class_module, def_class)
 
                     if self.args.exp_name in ["ttm_ffn", "weighted_ttm_ffn"]:
-                        # make list of equal tensor ranks
-                        # e.g. if tt_input_dims is [4,6,8,4], produces [rank, rank, rank]
-                        tt_ranks = [int(self.args.rank) for _ in range(len(self.args.tt_input_dims) - 1)]
-                        model = model_def(model_cls(config), tt_ranks, self.args.tt_input_dims, self.args.tt_output_dims)
+                        model = model_def(model_cls(config), self.args.tt_ranks, self.args.tt_input_dims, self.args.tt_output_dims)
                     elif self.args.exp_name == "fwsvd_ffn":
                         # in terms of speed/latency/throughput fwsvd_ffn should be exactly like svd_ffn, so we build svd_ffn
                         # this way we don't need to put training dataloader here
@@ -194,10 +191,7 @@ class PyTorchBenchmark(Benchmark):
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
                     if self.args.exp_name in ["ttm_ffn", "weighted_ttm_ffn"]:
-                        # make list of equal tensor ranks
-                        # e.g. if tt_input_dims is [4,6,8,4], produces [rank, rank, rank]
-                        tt_ranks = [int(self.args.rank) for _ in range(len(self.args.tt_input_dims) - 1)]
-                        model = model_def(model_cls(config), tt_ranks, self.args.tt_input_dims, self.args.tt_output_dims)
+                        model = model_def(model_cls(config), self.args.tt_ranks, self.args.tt_input_dims, self.args.tt_output_dims)
                     elif self.args.exp_name == "fwsvd_ffn":
                         # in terms of speed/latency/throughput fwsvd_ffn should be exactly like svd_ffn, so we build svd_ffn
                         # this way we don't need to put training dataloader here

@@ -145,15 +145,15 @@ class BenchmarkArguments:
         },
     )
     tt_ranks: Tuple[int, ...] = field(
-        default=(10, 10, 10),
+        default=(-10, -10, -10),
         metadata={"help": "Ranks of TTm decomposition of weights"}
     )
     tt_input_dims: Tuple[int, ...] = field(
-        default=(12,2,2,16),
+        default=(0,0,0,0),
         metadata={"help": "Input dimensions in TTMatrix representation of weights"}
     )
     tt_output_dims: Tuple[int, ...] = field(
-        default=(32,3,2,16),
+        default=(0,0,0,0),
         metadata={"help": "Output dimensions in TTMatrix representation of weights"}
     )
 
