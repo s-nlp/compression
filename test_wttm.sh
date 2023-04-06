@@ -1,0 +1,28 @@
+for model in "bert-base-uncased"
+do
+	for random in 585534 #743580 814084 39512 297104
+	do
+		for ranks in 10 60 110 #110 160 210 260 310 360 410 460 510 560 610 660 710 760
+		do
+			CUDA_VISIBLE_DEVICES=5 python bench_glue_AIO.py \
+				--model_name_or_path $model  \
+				--run_name fast-ttm4-sqrt-$model-$ranks-$random \
+				--comp_func 'ttm_ffn'  --rank $ranks \
+				--save_strategy "no" \
+				--logging_strategy "no" \
+				--do_bench --bench_on_eval --bench_on_train \
+				--max_bench_iter 1 \
+				--batch_sizes 1 16 32 \
+				--sequence_lengths 128 \
+				--max_seq_length 128 \
+				--per_device_train_batch_size 32 \
+				--per_device_eval_batch_size 128 \
+				--learning_rate 5e-5 \
+				--num_train_epochs 2 \
+				--evaluation_strategy 'epoch' \
+				--seed $random \
+				--output_dir './weighted_ttm_vika/' \
+				--do_train --do_eval --double_train
+		done
+	done
+done
