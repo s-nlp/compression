@@ -34,6 +34,42 @@ python bench_glue_AIO.py \
 ```
 This script will train and eval bert-base model for GLUE, and then output the results with GPU and CPU utilization.
 
+for TTM
+```bash
+for model in "bert-base-uncased"
+do
+	for ranks in 10 60 110 
+	do
+		for random in 39512 
+		do
+			CUDA_VISIBLE_DEVICES=0 python glue_trainer.py \
+				--model_name_or_path $model  \
+				--run_name $model-svd_ffn_w_T-$ranks-$random \
+				--comp_func 'ttm_ffn' --rank $ranks \
+				--save_strategy "no" \
+				--logging_strategy "no" \
+				--do_bench --bench_on_eval --bench_on_train \
+				--max_bench_iter 1 \
+				--batch_sizes 1 16 32 \
+				--sequence_lengths 128 \
+				--max_seq_length 128 \
+				--per_device_train_batch_size 32 \
+				--per_device_eval_batch_size 128 \
+				--learning_rate 5e-5 \
+				--tt_ranks $ranks $ranks $ranks \
+				--tt_input_dims 12 2 2 16 \
+				--tt_output_dims 32 3 2 16 \
+				--num_train_epochs 2 \
+				--evaluation_strategy 'epoch' \
+				--seed $random \
+				--output_dir './bert-base-uncased-ttm_ffn/' \
+				--do_train --do_eval \
+				--overwrite_output_dir
+		done
+	done
+done
+```
+
 | model                  | score    | size(MB) | size(M param) | SPS       | train speed | inf speed | used_cpu | used_cpu_mem | used_gpu | used_gpu_mem |
 |------------------------|----------|----------|---------------|-----------|-------------|-----------|----------|--------------|----------|--------------|
 | bert | 0.79508  | 417.6553 | 109.483778    | 513.44118 | 0.21948     | 0.078     | 35.40032 | 2644.8       | 44.9     | 1599         |
@@ -59,7 +95,7 @@ synthetic_benchmark.py \
 				--model_name_or_path 'gpt2'  \
 				--run_name 'gpt2-full' \
 				--comp_func 'none' \
-                --do_bench --bench_on_eval --bench_on_train \
+				--do_bench --bench_on_eval --bench_on_train \
 				--max_bench_iter 1 \
 				--batch_sizes 1 16 32 \
 				--sequence_lengths 128 \
@@ -74,18 +110,18 @@ Due to the specifics of gpus, the benchmark should only be performed on immutabl
 
 ## Experiments
 
-exps folder contains various model compression experiments:
+exps folder contains various model compression experiments using ```--comp_func``` :
 
-1. head pruning, based on [16vs1head paper](https://github.com/huggingface/transformers/tree/main/examples/research_projects/bertology)
+1. head pruning, based on [16vs1head paper](https://github.com/huggingface/transformers/tree/main/examples/research_projects/bertology) ```random_head```
 
-2. Standart SVD
+2. Standart SVD ```our_ffn```
+3. Weighted SVD ```svd_ffn_w_T or svd_ffn_w```
+4. TTM ```ttm_ffn```
 
-3. Weighted SVD
-
-4. TTM
+Additional models can be found in ./exps/models.py
 
 ## to-do
 
-1. SuperGlue, RussianSuperGlue, BigBench
+1. RussianSuperGlue, BigBench
 2. Better initialization
 3. Best-of-5 evaluation
