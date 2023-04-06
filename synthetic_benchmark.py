@@ -28,8 +28,8 @@ def synth_bench():
     parser.add_argument("--comp_func", help="Compression function to be used on finetuned model",default="none")  
     parser.add_argument("--rank", type=int, default=100, help="rank to compress")
     parser.add_argument("--tt_ranks", type=int, nargs="+", default=(10,10,10), help="ranks of TT decomposition") 
-    parser.add_argument("--tt_input_dims", type=int, nargs="+", default=(4,6,8,4), help="input_dims in TTMatrix") 
-    parser.add_argument("--tt_output_dims", type=int, nargs="+", default=(8,8,6,8), help="output_dims in TTMatrix")
+    parser.add_argument("--tt_input_dims", type=int, nargs="+", default=(12,2,2,16), help="input_dims in TTMatrix") 
+    parser.add_argument("--tt_output_dims", type=int, nargs="+", default=(32,3,2,16), help="output_dims in TTMatrix")
     args_bench, unknown = parser.parse_known_args()
     print(args_bench)
     
