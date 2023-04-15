@@ -17,16 +17,18 @@
     Benchmarking the library on inference and training in PyTorch.
 """
 
-from exps.models import MODEL_NAMES
-from monitor import Monitor
-
 import timeit
 from typing import Callable, Optional
 
-
+from exps.models import MODEL_NAMES
+from monitor import Monitor
 from transformers.configuration_utils import PretrainedConfig
-from transformers.models.auto.modeling_auto import MODEL_MAPPING, MODEL_WITH_LM_HEAD_MAPPING
+from transformers.models.auto.modeling_auto import (
+    MODEL_MAPPING,
+    MODEL_WITH_LM_HEAD_MAPPING,
+)
 from transformers.utils import is_py3nvml_available, is_torch_available, logging
+
 from .benchmark_utils import (
     Benchmark,
     Memory,
@@ -36,12 +38,10 @@ from .benchmark_utils import (
     stop_memory_tracing,
 )
 
-
 if is_torch_available():
     import torch
+
     from .benchmark_args import PyTorchBenchmarkArguments
-
-
 
 
 if is_py3nvml_available():
@@ -60,17 +60,25 @@ class PyTorchBenchmark(Benchmark):
     def framework_version(self):
         return torch.__version__
 
-    def _inference_speed(self, model_name: str, batch_size: int, sequence_length: int) -> float:
-        _inference = self._prepare_inference_func(model_name, batch_size, sequence_length)
+    def _inference_speed(
+        self, model_name: str, batch_size: int, sequence_length: int
+    ) -> float:
+        _inference = self._prepare_inference_func(
+            model_name, batch_size, sequence_length
+        )
         return self._measure_speed(_inference)
 
     def _inference_memory(
         self, model_name: str, batch_size: int, sequence_length: int
     ) -> [Memory, Optional[MemorySummary]]:
-        _inference = self._prepare_inference_func(model_name, batch_size, sequence_length)
+        _inference = self._prepare_inference_func(
+            model_name, batch_size, sequence_length
+        )
         return self._measure_memory(_inference)
 
-    def _train_speed(self, model_name: str, batch_size: int, sequence_length: int) -> float:
+    def _train_speed(
+        self, model_name: str, batch_size: int, sequence_length: int
+    ) -> float:
         _train = self._prepare_train_func(model_name, batch_size, sequence_length)
         return self._measure_speed(_train)
 
@@ -80,9 +88,11 @@ class PyTorchBenchmark(Benchmark):
         _train = self._prepare_train_func(model_name, batch_size, sequence_length)
         return self._measure_memory(_train)
 
-    def _prepare_inference_func(self, model_name: str, batch_size: int, sequence_length: int) -> Callable[[], None]:
+    def _prepare_inference_func(
+        self, model_name: str, batch_size: int, sequence_length: int
+    ) -> Callable[[], None]:
         config = self.config_dict[model_name]
-        #config = MODEL_WITH_LM_HEAD_MAPPING[config.__class__](config)
+        # config = MODEL_WITH_LM_HEAD_MAPPING[config.__class__](config)
 
         if self.args.torchscript:
             config.torchscript = True
@@ -95,27 +105,34 @@ class PyTorchBenchmark(Benchmark):
         if not self.args.only_pretrain_model and has_model_class_in_config:
             try:
                 model_class = config.architectures[0]
-                #print('model_class',model_class)
-                #print('model_name',model_name)
-                #print('MODEL_WITH_LM_HEAD_MAPPING[self.args.exp_name',MODEL_WITH_LM_HEAD_MAPPING[model_name])
-                #print('config.__class__',config.__class__)
-                #print('MODEL_MAPPING[config.__class__](config)',MODEL_WITH_LM_HEAD_MAPPING[config.__class__](config))
-                #print('self.config_dict[model_name]',self.config_dict[model_name])
+                # print('model_class',model_class)
+                # print('model_name',model_name)
+                # print('MODEL_WITH_LM_HEAD_MAPPING[self.args.exp_name',MODEL_WITH_LM_HEAD_MAPPING[model_name])
+                # print('config.__class__',config.__class__)
+                # print('MODEL_MAPPING[config.__class__](config)',MODEL_WITH_LM_HEAD_MAPPING[config.__class__](config))
+                # print('self.config_dict[model_name]',self.config_dict[model_name])
                 #################
-                #transformers_module = __import__("transformers", fromlist=[model_class])
-                #model_cls = getattr(transformers_module, model_class)
+                # transformers_module = __import__("transformers", fromlist=[model_class])
+                # model_cls = getattr(transformers_module, model_class)
                 model_cls = MODEL_WITH_LM_HEAD_MAPPING[config.__class__]
 
-                if not self.args.exp_name in ['none', None]:
+                if self.args.exp_name not in ["none", None]:
                     def_class = MODEL_NAMES[self.args.exp_name]
-                    #def_class = MODEL_WITH_LM_HEAD_MAPPING[self.args.exp_name]
+                    # def_class = MODEL_WITH_LM_HEAD_MAPPING[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
                     if self.args.exp_name == "ttm_ffn":
-                        model = model_def(model_cls(config), self.args.tt_ranks, self.args.tt_input_dims, self.args.tt_output_dims)
+                        model = model_def(
+                            model_cls(config),
+                            self.args.tt_ranks,
+                            self.args.tt_input_dims,
+                            self.args.tt_output_dims,
+                        )
+                    elif self.args.exp_name == "adaptive_svd":
+                        model = model_def(model_cls(config), self.args.rank_list)
                     else:
                         model = model_def(model_cls(config), self.args.rank)
-                    #model = model_def(model)
+                    # model = model_def(model)
 
                 else:
                     model = model_cls(config)
@@ -131,8 +148,17 @@ class PyTorchBenchmark(Benchmark):
         model.to(self.args.device)
 
         # encoder-decoder has vocab size saved differently
-        vocab_size = config.vocab_size if hasattr(config, "vocab_size") else config.encoder.vocab_size
-        input_ids = torch.randint(vocab_size, (batch_size, sequence_length), dtype=torch.long, device=self.args.device)
+        vocab_size = (
+            config.vocab_size
+            if hasattr(config, "vocab_size")
+            else config.encoder.vocab_size
+        )
+        input_ids = torch.randint(
+            vocab_size,
+            (batch_size, sequence_length),
+            dtype=torch.long,
+            device=self.args.device,
+        )
 
         if self.args.fp16:
             logger.info("Running training in Mixed Precision...")
@@ -158,10 +184,14 @@ class PyTorchBenchmark(Benchmark):
                 outputs = inference_model(input_ids)
             return outputs
 
-        _forward = encoder_decoder_forward if config.is_encoder_decoder else encoder_forward
+        _forward = (
+            encoder_decoder_forward if config.is_encoder_decoder else encoder_forward
+        )
         return _forward
 
-    def _prepare_train_func(self, model_name: str, batch_size: int, sequence_length: int) -> Callable[[], None]:
+    def _prepare_train_func(
+        self, model_name: str, batch_size: int, sequence_length: int
+    ) -> Callable[[], None]:
         config = self.config_dict[model_name]
 
         has_model_class_in_config = (
@@ -173,19 +203,22 @@ class PyTorchBenchmark(Benchmark):
             try:
                 model_class = config.architectures[0]
                 ###########
-                #transformers_module = __import__("transformers", fromlist=[model_class])
-                #model_cls = getattr(transformers_module, model_class)
+                # transformers_module = __import__("transformers", fromlist=[model_class])
+                # model_cls = getattr(transformers_module, model_class)
                 model_cls = MODEL_WITH_LM_HEAD_MAPPING[config.__class__]
 
-                if not self.args.exp_name in ['none', None]:
+                if self.args.exp_name not in ["none", None]:
                     def_class = MODEL_NAMES[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
-                    model = model_def(model_cls(config), int(self.args.rank))
-                    #model = model_def(model)
+                    if self.args.exp_name == "adaptive_svd":
+                        model = model_def(model_cls(config), self.args.rank_list)
+                    else:
+                        model = model_def(model_cls(config), int(self.args.rank))
+                    # model = model_def(model)
                 else:
                     model = MODEL_WITH_LM_HEAD_MAPPING[config.__class__](config)
-                    #model = model_cls(config)
+                    # model = model_cls(config)
             except ImportError:
                 raise ImportError(
                     f"{model_class} does not exist. If you just want to test the pretrained model, you might want to"
@@ -195,7 +228,9 @@ class PyTorchBenchmark(Benchmark):
             model = model = model_cls(config)
 
         if self.args.torchscript:
-            raise NotImplementedError("Training for torchscript is currently not implemented")
+            raise NotImplementedError(
+                "Training for torchscript is currently not implemented"
+            )
         else:
             train_model = model
 
@@ -203,8 +238,17 @@ class PyTorchBenchmark(Benchmark):
         model.to(self.args.device)
 
         # encoder-decoder has vocab size saved differently
-        vocab_size = config.vocab_size if hasattr(config, "vocab_size") else config.encoder.vocab_size
-        input_ids = torch.randint(vocab_size, (batch_size, sequence_length), dtype=torch.long, device=self.args.device)
+        vocab_size = (
+            config.vocab_size
+            if hasattr(config, "vocab_size")
+            else config.encoder.vocab_size
+        )
+        input_ids = torch.randint(
+            vocab_size,
+            (batch_size, sequence_length),
+            dtype=torch.long,
+            device=self.args.device,
+        )
 
         if self.args.fp16:
             logger.info("Running training in Mixed Precision...")
@@ -221,7 +265,9 @@ class PyTorchBenchmark(Benchmark):
             return loss
 
         def compute_loss_and_backprob_encoder_decoder():
-            loss = train_model(input_ids, decoder_input_ids=input_ids, labels=input_ids)[0]
+            loss = train_model(input_ids, decoder_input_ids=input_ids, labels=input_ids)[
+                0
+            ]
             loss.backward()
             return loss
 
@@ -235,9 +281,12 @@ class PyTorchBenchmark(Benchmark):
     def _measure_speed(self, func) -> float:
         try:
             from torch.utils.benchmark import Timer
+
             if self.args.is_tpu or self.args.torchscript:
                 # run additional 10 times to stabilize compilation for tpu and torchscript
-                logger.info("Do inference on TPU or torchscript. Running model 5 times to stabilize compilation")
+                logger.info(
+                    "Do inference on TPU or torchscript. Running model 5 times to stabilize compilation"
+                )
                 timeit.repeat(
                     func,
                     repeat=1,
@@ -246,10 +295,9 @@ class PyTorchBenchmark(Benchmark):
 
             timer = Timer(
                 stmt="func()",
-                globals = {
-                    'func': func},
+                globals={"func": func},
                 num_threads=1,
-                        )
+            )
             qir = 1
             results_mean = 1
             while qir > 0.10:
@@ -257,12 +305,12 @@ class PyTorchBenchmark(Benchmark):
                 results_mean = results.median
                 iqr = results.iqr
                 qir = iqr / results_mean
-            
+
             return results_mean
 
         except RuntimeError as e:
             self.print_fn(f"Doesn't fit on GPU. {e}")
-            return -1 #"N/A"
+            return -1  # "N/A"
 
     def _measure_memory(self, func: Callable[[], None]) -> [Memory, MemorySummary]:
         try:
@@ -277,6 +325,7 @@ class PyTorchBenchmark(Benchmark):
                 )
             elif self.args.is_gpu:
                 from torch.utils.benchmark import Timer
+
                 if not is_py3nvml_available():
                     logger.warning(
                         "py3nvml not installed, we won't log GPU memory usage. "
@@ -292,22 +341,22 @@ class PyTorchBenchmark(Benchmark):
                     stat_monitor.start_monitor()
                     timer = Timer(
                         stmt="func()",
-                        globals = {
-                            'func': func},
+                        globals={"func": func},
                         num_threads=1,
-                                )
+                    )
                     timer.blocked_autorange(min_run_time=self.args.repeat)
                     stat_monitor.stop_monitor()
                     memory = stat_monitor.stats
 
-
-                    #working with colab
+                    # working with colab
                     nvml.nvmlInit()
                     if memory[3] == 0:
                         handle = nvml.nvmlDeviceGetHandleByIndex(self.args.device_idx)
                         meminfo = nvml.nvmlDeviceGetMemoryInfo(handle)
-                        max_bytes_in_use = meminfo.used 
-                        memory_gpu = max_bytes_in_use / 1024 / 1024 #Memory(max_bytes_in_use)
+                        max_bytes_in_use = meminfo.used
+                        memory_gpu = (
+                            max_bytes_in_use / 1024 / 1024
+                        )  # Memory(max_bytes_in_use)
                         memory[3] = memory_gpu
                     # shutdown nvml
                     nvml.nvmlShutdown()
@@ -315,7 +364,11 @@ class PyTorchBenchmark(Benchmark):
             else:
                 # cpu
                 memory_bytes = measure_peak_memory_cpu(func)
-                memory = Memory(memory_bytes) if isinstance(memory_bytes, int) else memory_bytes
+                memory = (
+                    Memory(memory_bytes)
+                    if isinstance(memory_bytes, int)
+                    else memory_bytes
+                )
 
             if self.args.trace_memory_line_by_line:
                 summary = stop_memory_tracing(trace)
@@ -326,4 +379,4 @@ class PyTorchBenchmark(Benchmark):
         except RuntimeError as e:
             self.print_fn(f"Doesn't fit on GPU. {e}")
             stat_monitor.stop_monitor()
-            return [-1,-1,-1,-1], None #"N/A", None
+            return [-1, -1, -1, -1], None  # "N/A", None

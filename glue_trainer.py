@@ -16,61 +16,62 @@
 """ Finetuning the library models for sequence classification on GLUE."""
 # You can also adapt this script on your own text classification task. Pointers for this are left as comments.
 
-from utils.hf_bench.benchmark import PyTorchBenchmark
-from utils.hf_bench.benchmark_args import PyTorchBenchmarkArguments
-from exps.models import MODEL_NAMES
-
 import argparse
 import logging
 import os
 import random
 import sys
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
 from datetime import datetime
+from typing import List, Optional, Tuple
 
 import datasets
-import numpy as np
-from datasets import load_dataset
-
 import evaluate
+import numpy as np
+import torch
 import transformers
+from datasets import load_dataset
+from exps.models import MODEL_NAMES
+from synthetic_benchmark import synth_bench
+from to_table import OverallTable
+from torch import nn
+from torch.utils.data import DataLoader, SequentialSampler, Subset
+from torch.utils.data.distributed import DistributedSampler
+from tqdm import tqdm
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
     AutoTokenizer,
     DataCollatorWithPadding,
     EvalPrediction,
+    GlueDataset,
     HfArgumentParser,
     PretrainedConfig,
     Trainer,
     TrainingArguments,
     default_data_collator,
-    set_seed,
-    GlueDataset,
     glue_compute_metrics,
     glue_output_modes,
     glue_processors,
+    set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version, send_example_telemetry
+from transformers.utils import (
+    add_start_docstrings,
+    check_min_version,
+    send_example_telemetry,
+)
 from transformers.utils.versions import require_version
-from transformers.utils import add_start_docstrings
-
-import numpy as np
-import torch
-from torch import nn
-from torch.utils.data import DataLoader, SequentialSampler, Subset
-from torch.utils.data.distributed import DistributedSampler
-from tqdm import tqdm
-
-from to_table import OverallTable
-from synthetic_benchmark import synth_bench
+from utils.hf_bench.benchmark import PyTorchBenchmark
+from utils.hf_bench.benchmark_args import PyTorchBenchmarkArguments
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.23.0.dev0")
 
-require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/text-classification/requirements.txt")
+require_version(
+    "datasets>=1.8.0",
+    "To fix: pip install -r examples/pytorch/text-classification/requirements.txt",
+)
 
 task_to_keys = {
     "cola": ("sentence", None),
@@ -91,11 +92,24 @@ class CustomTrainerBert(Trainer):
     def make_grad_bank(self, model):
         self.grad_bank_out_epoch = []
         self.grad_bank_int_epoch = []
-        self.grad_bank_out = {i:torch.zeros((model.config.hidden_size,model.config.intermediate_size)) for i in range(model.config.num_hidden_layers)}
-        self.grad_bank_int = {i:torch.zeros((model.config.intermediate_size,model.config.hidden_size)) for i in range(model.config.num_hidden_layers)}
-        self.grad_bank_out_2 = {i:torch.zeros((model.config.hidden_size,model.config.intermediate_size)) for i in range(model.config.num_hidden_layers)}
-        self.grad_bank_int_2 = {i:torch.zeros((model.config.intermediate_size,model.config.hidden_size)) for i in range(model.config.num_hidden_layers)}
+        self.grad_bank_out = {
+            i: torch.zeros((model.config.hidden_size, model.config.intermediate_size))
+            for i in range(model.config.num_hidden_layers)
+        }
+        self.grad_bank_int = {
+            i: torch.zeros((model.config.intermediate_size, model.config.hidden_size))
+            for i in range(model.config.num_hidden_layers)
+        }
+        self.grad_bank_out_2 = {
+            i: torch.zeros((model.config.hidden_size, model.config.intermediate_size))
+            for i in range(model.config.num_hidden_layers)
+        }
+        self.grad_bank_int_2 = {
+            i: torch.zeros((model.config.intermediate_size, model.config.hidden_size))
+            for i in range(model.config.num_hidden_layers)
+        }
         self.avg_counter = 0
+
     def training_step(self, model, inputs):
         model.train()
         inputs = self._prepare_inputs(inputs)
@@ -105,13 +119,28 @@ class CustomTrainerBert(Trainer):
 
         for layer in range(model.config.num_hidden_layers):
 
-            self.grad_bank_out[layer] += model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() #(model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() **2).sum(0)
-            self.grad_bank_int[layer] += model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() #(model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() **2).sum(0)
-        
-            self.grad_bank_out_2[layer] += model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu()**2 #(model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() **2).sum(0)
-            self.grad_bank_int_2[layer] += model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu()**2 #(model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() **2).sum(0)
-        self.avg_counter+=1
+            self.grad_bank_out[layer] += (
+                model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu()
+            )  # (model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() **2).sum(0)
+            self.grad_bank_int[layer] += (
+                model.bert.encoder.layer[layer]
+                .intermediate.dense.weight.grad.detach()
+                .cpu()
+            )  # (model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() **2).sum(0)
+
+            self.grad_bank_out_2[layer] += (
+                model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu()
+                ** 2
+            )  # (model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() **2).sum(0)
+            self.grad_bank_int_2[layer] += (
+                model.bert.encoder.layer[layer]
+                .intermediate.dense.weight.grad.detach()
+                .cpu()
+                ** 2
+            )  # (model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() **2).sum(0)
+        self.avg_counter += 1
         return loss.detach()
+
 
 @dataclass
 class DataTrainingArguments:
@@ -124,14 +153,20 @@ class DataTrainingArguments:
     """
 
     task_name: Optional[str] = field(
-        default='cola',
-        metadata={"help": "The name of the task to train on: " + ", ".join(task_to_keys.keys())},
+        default="cola",
+        metadata={
+            "help": "The name of the task to train on: " + ", ".join(task_to_keys.keys())
+        },
     )
     dataset_name: Optional[str] = field(
-        default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
+        default=None,
+        metadata={"help": "The name of the dataset to use (via the datasets library)."},
     )
     dataset_config_name: Optional[str] = field(
-        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
+        default=None,
+        metadata={
+            "help": "The configuration name of the dataset to use (via the datasets library)."
+        },
     )
     max_seq_length: int = field(
         default=128,
@@ -143,18 +178,13 @@ class DataTrainingArguments:
         },
     )
     overwrite_cache: bool = field(
-        default=False, metadata={"help": "Overwrite the cached preprocessed datasets or not."}
+        default=False,
+        metadata={"help": "Overwrite the cached preprocessed datasets or not."},
     )
-    do_bench: bool = field(
-        default=False, metadata={"help": "NVML benchmarking"}
-    )
+    do_bench: bool = field(default=False, metadata={"help": "NVML benchmarking"})
     max_bench_iter: Optional[int] = field(
         default=5,
-        metadata={
-            "help": (
-                "Seconds for warmup blocked_autorange benchmark"
-            )
-        },
+        metadata={"help": ("Seconds for warmup blocked_autorange benchmark")},
     )
     pad_to_max_length: bool = field(
         default=True,
@@ -193,25 +223,37 @@ class DataTrainingArguments:
         },
     )
     train_file: Optional[str] = field(
-        default=None, metadata={"help": "A csv or a json file containing the training data."}
+        default=None,
+        metadata={"help": "A csv or a json file containing the training data."},
     )
     validation_file: Optional[str] = field(
-        default=None, metadata={"help": "A csv or a json file containing the validation data."}
+        default=None,
+        metadata={"help": "A csv or a json file containing the validation data."},
     )
-    test_file: Optional[str] = field(default=None, metadata={"help": "A csv or a json file containing the test data."})
+    test_file: Optional[str] = field(
+        default=None, metadata={"help": "A csv or a json file containing the test data."}
+    )
 
     def __post_init__(self):
         if self.task_name is not None:
             self.task_name = self.task_name.lower()
             if self.task_name not in task_to_keys.keys():
-                raise ValueError("Unknown task, you should pick one in " + ",".join(task_to_keys.keys()))
+                raise ValueError(
+                    "Unknown task, you should pick one in "
+                    + ",".join(task_to_keys.keys())
+                )
         elif self.dataset_name is not None:
             pass
         elif self.train_file is None or self.validation_file is None:
-            raise ValueError("Need either a GLUE task, a training/validation file or a dataset name.")
+            raise ValueError(
+                "Need either a GLUE task, a training/validation file or a dataset name."
+            )
         else:
             train_extension = self.train_file.split(".")[-1]
-            assert train_extension in ["csv", "json"], "`train_file` should be a csv or a json file."
+            assert train_extension in [
+                "csv",
+                "json",
+            ], "`train_file` should be a csv or a json file."
             validation_extension = self.validation_file.split(".")[-1]
             assert (
                 validation_extension == train_extension
@@ -225,25 +267,39 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+        metadata={
+            "help": "Path to pretrained model or model identifier from huggingface.co/models"
+        }
     )
     config_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+        default=None,
+        metadata={
+            "help": "Pretrained config name or path if not the same as model_name"
+        },
     )
     tokenizer_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+        default=None,
+        metadata={
+            "help": "Pretrained tokenizer name or path if not the same as model_name"
+        },
     )
     cache_dir: Optional[str] = field(
         default=None,
-        metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+        metadata={
+            "help": "Where do you want to store the pretrained models downloaded from huggingface.co"
+        },
     )
     use_fast_tokenizer: bool = field(
         default=True,
-        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
+        metadata={
+            "help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."
+        },
     )
     model_revision: str = field(
         default="main",
-        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+        metadata={
+            "help": "The specific model version to use (can be a branch name, tag name or commit id)."
+        },
     )
     use_auth_token: bool = field(
         default=False,
@@ -256,33 +312,66 @@ class ModelArguments:
     )
     ignore_mismatched_sizes: bool = field(
         default=False,
-        metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
+        metadata={
+            "help": "Will enable to load a pretrained model whose head dimensions are different."
+        },
     )
     comp_func: str = field(
-        default='none',
-        metadata={"help": "Compression function to be used on finetuned model"}
+        default="none",
+        metadata={"help": "Compression function to be used on finetuned model"},
     )
-    rank: int = field(
-        default=150, 
-        metadata={"help": "rank to compress"})
+    rank: int = field(default=150, metadata={"help": "rank to compress"})
 
+    rank_list: list[int, ...] = field(
+        default_factory=lambda: [
+            18,
+            20,
+            19,
+            15,
+            15,
+            18,
+            21,
+            18,
+            19,
+            17,
+            12,
+            21,
+            19,
+            8,
+            27,
+            25,
+            26,
+            19,
+            24,
+            31,
+            20,
+            10,
+            10,
+            11,
+        ],
+        metadata={
+            "help": "List of ranks for the each layer of bert-base-uncased (first 12 are for intermediate layers,\
+             from 12 to 24 there are ranks for an output layer)"
+        },
+    )
     tt_ranks: list[int] = field(
-        default_factory=lambda:[10,10],
-        metadata={"help": "Ranks of TTm decomposition of weights"}
+        default_factory=lambda: [10, 10],
+        metadata={"help": "Ranks of TTm decomposition of weights"},
     )
     tt_input_dims: list[int] = field(
-        default_factory=lambda:[8,12,8],
-        metadata={"help": "Input dimensions in TTMatrix representation of weights"}
+        default_factory=lambda: [8, 12, 8],
+        metadata={"help": "Input dimensions in TTMatrix representation of weights"},
     )
     tt_output_dims: list[int] = field(
-        default_factory=lambda:[12,16,16],
-        metadata={"help": "Output dimensions in TTMatrix representation of weights"}
+        default_factory=lambda: [12, 16, 16],
+        metadata={"help": "Output dimensions in TTMatrix representation of weights"},
     )
 
     double_train: bool = field(
         default=False,
         metadata={"help": "Train model after compression"},
     )
+
 
 def main(tasks_):
     # See all possible arguments in src/transformers/training_args.py
@@ -292,18 +381,26 @@ def main(tasks_):
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        model_args, data_args, training_args = parser.parse_json_file(
+            json_file=os.path.abspath(sys.argv[1])
+        )
     else:
-        model_args, data_args, training_args, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
+        model_args, data_args, training_args, _ = parser.parse_args_into_dataclasses(
+            return_remaining_strings=True
+        )
 
     data_args.task_name = tasks_
-    training_args.output_dir = os.path.join(training_args.output_dir, training_args.run_name, tasks_)
+    training_args.output_dir = os.path.join(
+        training_args.output_dir, training_args.run_name, tasks_
+    )
     if training_args.resume_from_checkpoint is not None:
-        training_args.resume_from_checkpoint = os.path.join(training_args.resume_from_checkpoint, tasks_)
+        training_args.resume_from_checkpoint = os.path.join(
+            training_args.resume_from_checkpoint, tasks_
+        )
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    #send_example_telemetry("run_glue", model_args, data_args)
+    # send_example_telemetry("run_glue", model_args, data_args)
 
     # Setup logging
     logging.basicConfig(
@@ -328,14 +425,20 @@ def main(tasks_):
 
     # Detecting last checkpoint.
     last_checkpoint = None
-    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+    if (
+        os.path.isdir(training_args.output_dir)
+        and training_args.do_train
+        and not training_args.overwrite_output_dir
+    ):
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
             raise ValueError(
                 f"Output directory ({training_args.output_dir}) already exists and is not empty. "
                 "Use --overwrite_output_dir to overcome."
             )
-        elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+        elif (
+            last_checkpoint is not None and training_args.resume_from_checkpoint is None
+        ):
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
@@ -343,7 +446,7 @@ def main(tasks_):
 
     # Set seed before initializing model.
     set_seed(training_args.seed)
-    
+
     # Get the datasets: you can either provide your own CSV/JSON training and evaluation files (see below)
     # or specify a GLUE benchmark task (the dataset will be downloaded automatically from the datasets Hub).
     #
@@ -375,7 +478,10 @@ def main(tasks_):
     else:
         # Loading a dataset from your local files.
         # CSV/JSON training and evaluation files are needed.
-        data_files = {"train": data_args.train_file, "validation": data_args.validation_file}
+        data_files = {
+            "train": data_args.train_file,
+            "validation": data_args.validation_file,
+        }
 
         # Get the test dataset: you can provide your own CSV/JSON test file (see below)
         # when you use `do_predict` without specifying a GLUE benchmark task.
@@ -388,7 +494,9 @@ def main(tasks_):
                 ), "`test_file` should have the same extension (csv or json) as `train_file`."
                 data_files["test"] = data_args.test_file
             else:
-                raise ValueError("Need either a GLUE task or a test file for `do_predict`.")
+                raise ValueError(
+                    "Need either a GLUE task or a test file for `do_predict`."
+                )
 
         for key in data_files.keys():
             logger.info(f"load a local file for {key}: {data_files[key]}")
@@ -422,7 +530,10 @@ def main(tasks_):
             num_labels = 1
     else:
         # Trying to have good defaults here, don't hesitate to tweak to your needs.
-        is_regression = raw_datasets["train"].features["label"].dtype in ["float32", "float64"]
+        is_regression = raw_datasets["train"].features["label"].dtype in [
+            "float32",
+            "float64",
+        ]
         if is_regression:
             num_labels = 1
         else:
@@ -438,7 +549,9 @@ def main(tasks_):
     # download model & vocab.
 
     config = AutoConfig.from_pretrained(
-        model_args.config_name if model_args.config_name else model_args.model_name_or_path,
+        model_args.config_name
+        if model_args.config_name
+        else model_args.model_name_or_path,
         num_labels=num_labels,
         finetuning_task=data_args.task_name,
         cache_dir=model_args.cache_dir,
@@ -446,16 +559,18 @@ def main(tasks_):
         use_auth_token=True if model_args.use_auth_token else None,
     )
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
+        model_args.tokenizer_name
+        if model_args.tokenizer_name
+        else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
         use_fast=model_args.use_fast_tokenizer,
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    
+
     if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-            config.pad_token_id = config.eos_token_id
+        tokenizer.pad_token = tokenizer.eos_token
+        config.pad_token_id = config.eos_token_id
 
     model = AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
@@ -472,8 +587,13 @@ def main(tasks_):
         sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
     else:
         # Again, we try to have some nice defaults but don't hesitate to tweak to your use case.
-        non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
-        if "sentence1" in non_label_column_names and "sentence2" in non_label_column_names:
+        non_label_column_names = [
+            name for name in raw_datasets["train"].column_names if name != "label"
+        ]
+        if (
+            "sentence1" in non_label_column_names
+            and "sentence2" in non_label_column_names
+        ):
             sentence1_key, sentence2_key = "sentence1", "sentence2"
         else:
             if len(non_label_column_names) >= 2:
@@ -498,7 +618,9 @@ def main(tasks_):
         # Some have all caps in their config, some don't.
         label_name_to_id = {k.lower(): v for k, v in model.config.label2id.items()}
         if list(sorted(label_name_to_id.keys())) == list(sorted(label_list)):
-            label_to_id = {i: int(label_name_to_id[label_list[i]]) for i in range(num_labels)}
+            label_to_id = {
+                i: int(label_name_to_id[label_list[i]]) for i in range(num_labels)
+            }
         else:
             logger.warning(
                 "Your model seems to have been trained with labels, but they don't match the dataset: ",
@@ -525,13 +647,19 @@ def main(tasks_):
     def preprocess_function(examples):
         # Tokenize the texts
         args = (
-            (examples[sentence1_key],) if sentence2_key is None else (examples[sentence1_key], examples[sentence2_key])
+            (examples[sentence1_key],)
+            if sentence2_key is None
+            else (examples[sentence1_key], examples[sentence2_key])
         )
-        result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
+        result = tokenizer(
+            *args, padding=padding, max_length=max_seq_length, truncation=True
+        )
 
         # Map labels to IDs (not necessary for GLUE tasks)
         if label_to_id is not None and "label" in examples:
-            result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
+            result["label"] = [
+                (label_to_id[l] if l != -1 else -1) for l in examples["label"]
+            ]
         return result
 
     with training_args.main_process_first(desc="dataset map pre-processing"):
@@ -552,17 +680,27 @@ def main(tasks_):
     if training_args.do_eval:
         if "validation" not in raw_datasets and "validation_matched" not in raw_datasets:
             raise ValueError("--do_eval requires a validation dataset")
-        eval_dataset = raw_datasets["validation_matched" if data_args.task_name == "mnli" else "validation"]
+        eval_dataset = raw_datasets[
+            "validation_matched" if data_args.task_name == "mnli" else "validation"
+        ]
         if data_args.max_eval_samples is not None:
             max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
             eval_dataset = eval_dataset.select(range(max_eval_samples))
 
-    if training_args.do_predict or data_args.task_name is not None or data_args.test_file is not None:
+    if (
+        training_args.do_predict
+        or data_args.task_name is not None
+        or data_args.test_file is not None
+    ):
         if "test" not in raw_datasets and "test_matched" not in raw_datasets:
             raise ValueError("--do_predict requires a test dataset")
-        predict_dataset = raw_datasets["test_matched" if data_args.task_name == "mnli" else "test"]
+        predict_dataset = raw_datasets[
+            "test_matched" if data_args.task_name == "mnli" else "test"
+        ]
         if data_args.max_predict_samples is not None:
-            max_predict_samples = min(len(predict_dataset), data_args.max_predict_samples)
+            max_predict_samples = min(
+                len(predict_dataset), data_args.max_predict_samples
+            )
             predict_dataset = predict_dataset.select(range(max_predict_samples))
 
     # Log a few random samples from the training set:
@@ -601,7 +739,14 @@ def main(tasks_):
         data_collator = None
 
     # Initialize our Trainer
-    if not model_args.comp_func in ['none', None]:
+    if not model_args.comp_func in [
+        "none",
+        None,
+        "adaptive_svd",
+        "pre_svd",
+        "ttm_ffn_alt",
+        "ttm_ffn_alt_bart",
+    ]:
         trainer = CustomTrainerBert(
             model=model,
             args=training_args,
@@ -614,12 +759,15 @@ def main(tasks_):
         trainer.make_grad_bank(model)
 
         import pickle
-        with open(os.path.join(training_args.resume_from_checkpoint,'weight_dict.pickle'), 'rb') as ff:
-            mass = pickle.load(ff)
-        trainer.grad_bank_int_2 = mass['weight_int']
-        trainer.grad_bank_out_2 = mass['weight_out']
-        trainer.avg_counter = mass['weight_count']
 
+        with open(
+            os.path.join(training_args.resume_from_checkpoint, "weight_dict.pickle"),
+            "rb",
+        ) as ff:
+            mass = pickle.load(ff)
+        trainer.grad_bank_int_2 = mass["weight_int"]
+        trainer.grad_bank_out_2 = mass["weight_out"]
+        trainer.avg_counter = mass["weight_count"]
 
     else:
         trainer = Trainer(
@@ -631,8 +779,18 @@ def main(tasks_):
             tokenizer=tokenizer,
             data_collator=data_collator,
         )
-    trainer.model.to('cuda')
+    trainer.model.to("cuda")
 
+    def_class = MODEL_NAMES[model_args.comp_func]
+    class_module = __import__("exps.models", fromlist=[def_class])
+    model_def = getattr(class_module, def_class)
+    if model_args.comp_func == "adaptive_svd":
+        trainer.model = model_def(trainer.model, model_args.rank_list)
+    elif model_args.comp_func == "presvd":
+        trainer.model = model_def(trainer.model, model_args.rank)
+    else:
+        pass
+    trainer.model.cuda()
     # Training
     if training_args.do_train:
         checkpoint = None
@@ -643,50 +801,67 @@ def main(tasks_):
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         metrics = train_result.metrics
         max_train_samples = (
-            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+            data_args.max_train_samples
+            if data_args.max_train_samples is not None
+            else len(train_dataset)
         )
         metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
-        if training_args.save_strategy != 'no':
+        if training_args.save_strategy != "no":
             trainer.save_model()  # Saves the tokenizer too for easy upload
             trainer.log_metrics("train", metrics)
             trainer.save_metrics("train", metrics)
             trainer.save_state()
 
             import pickle
-            full_dict = {'weight_int':[],
-                        'weight_out':[],
-                        'weight_count':0}
-            full_dict['weight_int'] = trainer.grad_bank_int_2
-            full_dict['weight_out'] = trainer.grad_bank_out_2
-            full_dict['weight_count'] = trainer.avg_counter
 
-            with open(os.path.join(trainer.args.output_dir, 'weight_dict.pickle'), 'wb') as handle:
+            full_dict = {"weight_int": [], "weight_out": [], "weight_count": 0}
+            full_dict["weight_int"] = trainer.grad_bank_int_2
+            full_dict["weight_out"] = trainer.grad_bank_out_2
+            full_dict["weight_count"] = trainer.avg_counter
+
+            with open(
+                os.path.join(trainer.args.output_dir, "weight_dict.pickle"), "wb"
+            ) as handle:
                 pickle.dump(full_dict, handle)
-
 
     # EVALUATION
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-        if not model_args.comp_func in ['none', None]:
+        if not model_args.comp_func in ["none", None]:
             def_class = MODEL_NAMES[model_args.comp_func]
             class_module = __import__("exps.models", fromlist=[def_class])
             model_def = getattr(class_module, def_class)
-            if model_args.comp_func in ["ttm_ffn", "ttm_ffn_alt"]:
-                trainer.model = model_def(trainer.model, model_args.tt_ranks, 
-                                          model_args.tt_input_dims, model_args.tt_output_dims)
-            elif model_args.comp_func in ["ttm_ffn_w_inv","ttm_ffn_w", "ttm_ffn_alt_w"]:
-                trainer.model = model_def(trainer.model, model_args.tt_ranks, 
-                                          model_args.tt_input_dims, model_args.tt_output_dims,
-                                          weight_int=trainer.grad_bank_int_2, 
-                                          weight_out=trainer.grad_bank_out_2, 
-                                          weight_count=trainer.avg_counter)
+            if model_args.comp_func in ["ttm_ffn", "ttm_ffn_alt", "ttm_ffn_alt_bart"]:
+                trainer.model = model_def(
+                    trainer.model,
+                    model_args.tt_ranks,
+                    model_args.tt_input_dims,
+                    model_args.tt_output_dims,
+                )
+            elif model_args.comp_func in ["ttm_ffn_w_inv", "ttm_ffn_w", "ttm_ffn_alt_w"]:
+                trainer.model = model_def(
+                    trainer.model,
+                    model_args.tt_ranks,
+                    model_args.tt_input_dims,
+                    model_args.tt_output_dims,
+                    weight_int=trainer.grad_bank_int_2,
+                    weight_out=trainer.grad_bank_out_2,
+                    weight_count=trainer.avg_counter,
+                )
+            elif model_args.comp_func in ["adaptive_svd", "pre_svd"]:
+                # trainer.model = model_def(trainer.model, model_args.rank_list)
+                pass
             else:
-                trainer.model = model_def(trainer.model, model_args.rank, 
-                                          weight_int=trainer.grad_bank_int_2, weight_out=trainer.grad_bank_out_2, 
-                                          weight_count=trainer.avg_counter)
-                #trainer.model = model_def(trainer.model, model_args.rank)
-            trainer.model.to('cuda')
+                trainer.model = model_def(
+                    trainer.model,
+                    model_args.rank,
+                    weight_int=trainer.grad_bank_int_2,
+                    weight_out=trainer.grad_bank_out_2,
+                    weight_count=trainer.avg_counter,
+                )
+                # trainer.model = model_def(trainer.model, model_args.rank)
+            trainer.model.to("cuda")
 
         # Loop to handle MNLI double evaluation (matched, mis-matched)
         tasks = [data_args.task_name]
@@ -704,7 +879,9 @@ def main(tasks_):
             metrics = trainer.evaluate(eval_dataset=eval_dataset)
 
             max_eval_samples = (
-                data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+                data_args.max_eval_samples
+                if data_args.max_eval_samples is not None
+                else len(eval_dataset)
             )
             metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
 
@@ -714,12 +891,14 @@ def main(tasks_):
                 combined.update(metrics)
 
             trainer.log_metrics("eval", metrics)
-            trainer.save_metrics("eval", combined if task is not None and "mnli" in task else metrics)
+            trainer.save_metrics(
+                "eval", combined if task is not None and "mnli" in task else metrics
+            )
 
     # BENCHMARKING
     if data_args.do_bench:
         logger.info("*** Benchmarking ***")
-        if not model_args.comp_func in ['none', None] and model_args.double_train:
+        if not model_args.comp_func in ["none", None] and model_args.double_train:
             trainer2 = Trainer(
                 model=trainer.model,
                 args=training_args,
@@ -727,7 +906,8 @@ def main(tasks_):
                 eval_dataset=eval_dataset if training_args.do_eval else None,
                 compute_metrics=compute_metrics,
                 tokenizer=tokenizer,
-                data_collator=data_collator,)
+                data_collator=data_collator,
+            )
             trainer2.train()
 
         # Loop to handle MNLI double evaluation (matched, mis-matched)
@@ -746,7 +926,9 @@ def main(tasks_):
             metrics = trainer.evaluate(eval_dataset=eval_dataset)
 
             max_eval_samples = (
-                data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+                data_args.max_eval_samples
+                if data_args.max_eval_samples is not None
+                else len(eval_dataset)
             )
             metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
 
@@ -754,19 +936,20 @@ def main(tasks_):
                 metrics = {k + "_mm": v for k, v in metrics.items()}
             if task is not None and "mnli" in task:
                 combined.update(metrics)
-                
+
             size_of = trainer.model.get_memory_footprint()
             param_of = sum(p.numel() for p in trainer.model.parameters())
-            metrics.update({'size_of':size_of})
-            metrics.update({'param_of':param_of})
+            metrics.update({"size_of": size_of})
+            metrics.update({"param_of": param_of})
 
-            
             if task is not None and "mnli" in task:
-                combined.update({'size_of':size_of})
-                combined.update({'param_of':param_of})
-                
+                combined.update({"size_of": size_of})
+                combined.update({"param_of": param_of})
+
             trainer.log_metrics("bench_", metrics)
-            trainer.save_metrics("bench_0", combined if task is not None and "mnli" in task else metrics)
+            trainer.save_metrics(
+                "bench_0", combined if task is not None and "mnli" in task else metrics
+            )
 
     if training_args.do_predict:
         logger.info("*** Predict ***")
@@ -781,10 +964,18 @@ def main(tasks_):
         for predict_dataset, task in zip(predict_datasets, tasks):
             # Removing the `label` columns because it contains -1 and Trainer won't like that.
             predict_dataset = predict_dataset.remove_columns("label")
-            predictions = trainer.predict(predict_dataset, metric_key_prefix="predict").predictions
-            predictions = np.squeeze(predictions) if is_regression else np.argmax(predictions, axis=1)
+            predictions = trainer.predict(
+                predict_dataset, metric_key_prefix="predict"
+            ).predictions
+            predictions = (
+                np.squeeze(predictions)
+                if is_regression
+                else np.argmax(predictions, axis=1)
+            )
 
-            output_predict_file = os.path.join(training_args.output_dir, f"predict_results_{task}.txt")
+            output_predict_file = os.path.join(
+                training_args.output_dir, f"predict_results_{task}.txt"
+            )
             if trainer.is_world_process_zero():
                 with open(output_predict_file, "w") as writer:
                     logger.info(f"***** Predict results {task} *****")
@@ -796,26 +987,33 @@ def main(tasks_):
                             item = label_list[item]
                             writer.write(f"{index}\t{item}\n")
 
-    kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-classification"}
+    kwargs = {
+        "finetuned_from": model_args.model_name_or_path,
+        "tasks": "text-classification",
+    }
     if data_args.task_name is not None:
         kwargs["language"] = "en"
         kwargs["dataset_tags"] = "glue"
         kwargs["dataset_args"] = data_args.task_name
         kwargs["dataset"] = f"GLUE {data_args.task_name.upper()}"
 
-        #training_args.output_dir
-    #return training_args.output_dir
+        # training_args.output_dir
+    # return training_args.output_dir
+
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)
     main()
 
+
 ##BAD MANNERS
 if __name__ == "__main__":
-    #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
-    #tasks_ = ['cola']#,'stsb', 'mrpc', 'rte', 'wnli']
-    tasks_ = ['stsb', 'cola','mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'] #  ,'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
-    synth_bench()
+    # torch.multiprocessing.set_start_method('spawn')# good solution !!!!
+    # tasks_ = ['cola']#,'stsb', 'mrpc', 'rte', 'wnli']
+    # tasks_ = ["stsb", "cola", "rte", "wnli"]
+    tasks_ = ["stsb", "cola", "rte", "wnli", "mnli", "mrpc", "qnli", "qqp", "sst2"]
+    #  ,'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
+    # synth_bench()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name")
@@ -824,4 +1022,6 @@ if __name__ == "__main__":
 
     for task_ in tasks_:
         path_to = main(task_)
-    OverallTable(os.path.join(args_alt.output_dir, args_alt.run_name,'..'), 'results.csv', 'glue')
+    OverallTable(
+        os.path.join(args_alt.output_dir, args_alt.run_name, ".."), "results.csv", "glue"
+    )

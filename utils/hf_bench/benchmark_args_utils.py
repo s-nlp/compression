@@ -23,7 +23,6 @@ from typing import List, Tuple
 
 from transformers.utils import logging
 
-
 logger = logging.get_logger(__name__)
 
 
@@ -50,36 +49,85 @@ class BenchmarkArguments:
         },
     )
     exp_name: str = field(
-        default='none',
-        metadata={"help": "The name of the exp to train on: "}
+        default="none", metadata={"help": "The name of the exp to train on: "}
     )
     rank: int = field(default=100, metadata={"help": "rank of data"})
+    rank_list: List[int] = list_field(
+        default=[
+            21,
+            30,
+            42,
+            28,
+            27,
+            23,
+            26,
+            27,
+            23,
+            17,
+            28,
+            21,
+            35,
+            48,
+            39,
+            30,
+            40,
+            48,
+            47,
+            47,
+            33,
+            10,
+            10,
+            26,
+        ],
+        metadata={
+            "help": "List of ranks for the each layer of bert-base-uncased (first 12 are for intermediate layers,\
+             from 12 to 24 there are ranks for an output layer)"
+        },
+    )
     batch_sizes: List[int] = list_field(
-        default=[8], metadata={"help": "List of batch sizes for which memory and time performance will be evaluated"}
+        default=[8],
+        metadata={
+            "help": "List of batch sizes for which memory and time performance will be evaluated"
+        },
     )
 
     sequence_lengths: List[int] = list_field(
         default=[8, 32, 128, 512],
-        metadata={"help": "List of sequence lengths for which memory and time performance will be evaluated"},
+        metadata={
+            "help": "List of sequence lengths for which memory and time performance will be evaluated"
+        },
     )
 
     inference: bool = field(
         default=True,
-        metadata={"help": "Whether to benchmark inference of model. Inference can be disabled via --no-inference."},
+        metadata={
+            "help": "Whether to benchmark inference of model. Inference can be disabled via --no-inference."
+        },
     )
     cuda: bool = field(
         default=True,
-        metadata={"help": "Whether to run on available cuda devices. Cuda can be disabled via --no-cuda."},
+        metadata={
+            "help": "Whether to run on available cuda devices. Cuda can be disabled via --no-cuda."
+        },
     )
     tpu: bool = field(
-        default=True, metadata={"help": "Whether to run on available tpu devices. TPU can be disabled via --no-tpu."}
+        default=True,
+        metadata={
+            "help": "Whether to run on available tpu devices. TPU can be disabled via --no-tpu."
+        },
     )
-    fp16: bool = field(default=False, metadata={"help": "Use FP16 to accelerate inference."})
-    training: bool = field(default=False, metadata={"help": "Benchmark training of model"})
+    fp16: bool = field(
+        default=False, metadata={"help": "Use FP16 to accelerate inference."}
+    )
+    training: bool = field(
+        default=False, metadata={"help": "Benchmark training of model"}
+    )
     verbose: bool = field(default=False, metadata={"help": "Verbose memory tracing"})
     speed: bool = field(
         default=True,
-        metadata={"help": "Whether to perform speed measurements. Speed measurements can be disabled via --no-speed."},
+        metadata={
+            "help": "Whether to perform speed measurements. Speed measurements can be disabled via --no-speed."
+        },
     )
     memory: bool = field(
         default=True,
@@ -87,10 +135,18 @@ class BenchmarkArguments:
             "help": "Whether to perform memory measurements. Memory measurements can be disabled via --no-memory"
         },
     )
-    trace_memory_line_by_line: bool = field(default=False, metadata={"help": "Trace memory line by line"})
-    save_to_csv: bool = field(default=False, metadata={"help": "Save result to a CSV file"})
-    log_print: bool = field(default=False, metadata={"help": "Save all print statements in a log file"})
-    env_print: bool = field(default=False, metadata={"help": "Whether to print environment information"})
+    trace_memory_line_by_line: bool = field(
+        default=False, metadata={"help": "Trace memory line by line"}
+    )
+    save_to_csv: bool = field(
+        default=False, metadata={"help": "Save result to a CSV file"}
+    )
+    log_print: bool = field(
+        default=False, metadata={"help": "Save all print statements in a log file"}
+    )
+    env_print: bool = field(
+        default=False, metadata={"help": "Whether to print environment information"}
+    )
     multi_process: bool = field(
         default=True,
         metadata={
@@ -111,11 +167,15 @@ class BenchmarkArguments:
     )
     train_time_csv_file: str = field(
         default=f"train_time_{round(time())}.csv",
-        metadata={"help": "CSV filename used if saving time results to csv for training."},
+        metadata={
+            "help": "CSV filename used if saving time results to csv for training."
+        },
     )
     train_memory_csv_file: str = field(
         default=f"train_memory_{round(time())}.csv",
-        metadata={"help": "CSV filename used if saving memory results to csv for training."},
+        metadata={
+            "help": "CSV filename used if saving memory results to csv for training."
+        },
     )
     env_info_csv_file: str = field(
         default=f"env_info_{round(time())}.csv",
@@ -136,16 +196,15 @@ class BenchmarkArguments:
         },
     )
     tt_ranks: Tuple[int, ...] = field(
-        default=(10, 10, 10),
-        metadata={"help": "Ranks of TTm decomposition of weights"}
+        default=(10, 10, 10), metadata={"help": "Ranks of TTm decomposition of weights"}
     )
     tt_input_dims: Tuple[int, ...] = field(
-        default=(4,6,8,4),
-        metadata={"help": "Input dimensions in TTMatrix representation of weights"}
+        default=(4, 6, 8, 4),
+        metadata={"help": "Input dimensions in TTMatrix representation of weights"},
     )
     tt_output_dims: Tuple[int, ...] = field(
-        default=(8,8,6,8),
-        metadata={"help": "Output dimensions in TTMatrix representation of weights"}
+        default=(8, 8, 6, 8),
+        metadata={"help": "Output dimensions in TTMatrix representation of weights"},
     )
 
     def to_json_string(self):
