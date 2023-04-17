@@ -121,7 +121,7 @@ class PyTorchBenchmark(Benchmark):
                     # def_class = MODEL_WITH_LM_HEAD_MAPPING[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
-                    if self.args.exp_name == "ttm_ffn":
+                    if self.args.exp_name in ["ttm_ffn", "ttm_ffn_alt"]:
                         model = model_def(
                             model_cls(config),
                             self.args.tt_ranks,
@@ -211,14 +211,16 @@ class PyTorchBenchmark(Benchmark):
                     def_class = MODEL_NAMES[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
-                    if self.args.exp_name == "adaptive_svd":
+                    if self.args.exp_name in ["ttm_ffn", "ttm_ffn_alt"]:
+                        model = model_def(model_cls(config), 
+                                          self.args.tt_ranks, 
+                                          self.args.tt_input_dims, 
+                                          self.args.tt_output_dims)                    
+                    elif self.args.exp_name == "adaptive_svd":
                         model = model_def(model_cls(config), self.args.rank_list)
                     else:
                         model = model_def(model_cls(config), int(self.args.rank))
                     # model = model_def(model)
-                else:
-                    model = MODEL_WITH_LM_HEAD_MAPPING[config.__class__](config)
-                    # model = model_cls(config)
             except ImportError:
                 raise ImportError(
                     f"{model_class} does not exist. If you just want to test the pretrained model, you might want to"
