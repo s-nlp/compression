@@ -5,12 +5,13 @@ import torch as T
 from opt_einsum import contract_expression
 from opt_einsum.contract import ContractExpression
 
-from .linalg import ttd
+from .linalg import ttd, weighted_ttd
 from .functional import compressed_linear_svd
 
 __all__ = ('CompressedLinear', 
            'SVDCompressedLinear', 'FWSVDCompressedLinear'
-           'TTCompressedLinear', 'FWTTCompressedLinear')
+           'TTCompressedLinear', 'FWTTCompressedLinear',
+           'InvasiveFWTTCompressedLinear')
 
 
 def chop(values, eps):
@@ -416,3 +417,98 @@ class FWTTCompressedLinear(CompressedLinear):
             bias = T.clone(linear.bias.data)
 
         return FWTTCompressedLinear(cores, fisher_information, bias)
+
+
+class InvasiveFWTTCompressedLinear(CompressedLinear):
+    """Class TTCompressedLinear is a layer which represents a weight matrix of
+    linear layer in factorized view as tensor train matrix.
+
+    >>> linear_layer = T.nn.Linear(6, 6)
+    >>> tt_layer = TTCompressedLinear \
+    ...     .from_linear(linear_layer, rank=2, shape=((2, 3), (3, 2)))
+    """
+
+    def __init__(self, cores: Sequence[T.Tensor],
+                 bias: Optional[T.Tensor] = None):
+        super().__init__()
+
+        for i, core in enumerate(cores):
+            if core.ndim != 4:
+                raise ValueError('Expected number of dimensions of the '
+                                 f'{i}-th core is 4 but given {cores.ndim}.')
+
+        # Prepare contaction expression.
+        self.rank = (1, ) + tuple(core.shape[3] for core in cores)
+        self.shape = (tuple(core.shape[1] for core in cores),
+                      tuple(core.shape[2] for core in cores))
+        self.contact = make_contraction(self.shape, self.rank)
+
+        # TT-matrix is applied on the left. So, this defines number of input
+        # and output features.
+        self.in_features = np.prod(self.shape[0])
+        self.out_features = np.prod(self.shape[1])
+
+        # Create trainable variables.
+        self.cores = T.nn.ParameterList(T.nn.Parameter(core) for core in cores)
+        self.bias = None
+        if bias is not None:
+            if bias.size() != self.out_features:
+                raise ValueError(f'Expected bias size is {self.out_features} '
+                                 f'but its shape is {bias.shape}.')
+            self.bias = T.nn.Parameter(bias)
+
+    def forward(self, input: T.Tensor) -> T.Tensor:
+        # We need replace the feature dimension with multi-dimension to contact
+        # with TT-matrix.
+        input_shape = input.shape
+        input = input.reshape(-1, *self.shape[0])
+
+        # Contract input with weights and replace back multi-dimension with
+        # feature dimension.
+        output = self.contact(input, *self.cores)
+        output = output.reshape(*input_shape[:-1], self.out_features)
+
+        if self.bias is not None:
+            output += self.bias
+        return output
+
+    @classmethod
+    def from_linear(cls, linear: T.nn.Linear, fisher_information: T.Tensor,
+                    shape: Tuple[Tuple[int], Tuple[int]], rank: int, **kwargs):
+        ndim = len(shape[0])
+
+        # Prepare information about shape and rank of TT (not TTM).
+        tt_rank = (1, ) + (rank, ) * (ndim - 1) + (1, )
+        tt_shape = tuple(n * m for n, m in zip(*shape))
+
+        # Reshape weight matrix to tensor indexes like TT-matrix.
+        matrix = linear.weight.data.T
+
+        assert fisher_information.shape == matrix.shape or fisher_information.T.shape == matrix.shape, \
+            f"Can't match fisher weights with parameter matrix: fisher - {fisher_information.shape}, params - {matrix.shape}"
+        
+        if fisher_information.shape != matrix.shape:
+            fisher_information = fisher_information.T
+        
+        tensor = matrix.reshape(shape[0] + shape[1])
+        fisher_information = fisher_information.reshape(shape[0] + shape[1])
+        for i in range(ndim - 1):
+            tensor = tensor.moveaxis(ndim + i, 2 * i + 1)
+            fisher_information = fisher_information.moveaxis(ndim + i, 2 * i + 1)
+
+        # Reshape TT-matrix to a plain TT and apply decomposition.
+        tensor = tensor.reshape(tt_shape)
+        fisher_information = fisher_information.reshape(tt_shape)
+        cores = weighted_ttd(tensor, fisher_information, tt_rank, **kwargs)
+
+        # Reshape TT-cores back to TT-matrix cores (TTM-cores).
+        core_shapes = zip(tt_rank, *shape, tt_rank[1:])
+        cores = [core.reshape(core_shape)
+                 for core, core_shape in zip(cores, core_shapes)]
+
+        # Make copy of bias if it exists.
+        bias = None
+        if linear.bias is not None:
+            bias = T.clone(linear.bias.data)
+
+        return TTCompressedLinear(cores, bias)

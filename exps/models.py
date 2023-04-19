@@ -28,10 +28,10 @@ MODEL_NAMES = OrderedDict(
         ("svd_ffn_w", "weight_svd_model"),
         ("svd_ffn_w_T", "weight_svd_T_model"),
         ("uns_prune", "unstructured_pruning"),
-        ("drone", "apply_drone_compress_bert")
-        ("ttm_ffn", "apply_ttm_compress_bert_ffn"),
+        ("drone", "apply_drone_compress_bert"),
         ("ttm_ffn_alt", "apply_alt_ttm_compress_bert_ffn"),
         ("ttm_ffn_alt_w", "apply_alt_ttm_w_compress_bert_ffn"),
+        ("ttm_ffn_alt_w_inv", "apply_alt_ttm_w_compress_bert_ffn_inv"),
         
         ("ttm_ffn_w_inv", "apply_ttm_compress_bert_ffn_w_inv"),
         ("ttm_ffn_w", "apply_ttm_compress_bert_ffn_w"),
@@ -63,6 +63,14 @@ def apply_alt_ttm_w_compress_bert_ffn(model, ranks, input_dims, output_dims,
                                 weight_int, weight_out, weight_count, invasive=False)
     return model
 
+#TTM weight invasive from daniel source code
+def apply_alt_ttm_w_compress_bert_ffn_inv(model, ranks, input_dims, output_dims, 
+                                weight_int, weight_out, weight_count):
+    model = ttm_alt_compress_bert_ffn(model, ranks, input_dims, output_dims, False,
+                                weight_int, weight_out, weight_count, invasive=True)
+    return model
+
+
 #simple svd from daniel source code
 def apply_alt_svd_compress_bert_ffn(model, ranks, *args, **kwargs):
     model = svd_alt_compress_bert_ffn(model, ranks)
@@ -77,7 +85,7 @@ def apply_alt_w_svd_invasive_compress_bert_ffn(model, ranks,
 
 #weighted invasive TTM from vika source code
 #TODO:not working now, but should?
-def apply_ttm_compress_bert_ffn_w_inv(model, ranks, input_dims, output_dims, 
+def apply_ttm_compress_bert_ffn_w_inv(model, ranks, input_dims, output_dims,
                                 weight_int, weight_out, weight_count):
     
     model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, False,
