@@ -10,8 +10,8 @@ def ttm_alt_compress_bert_ffn(model, ranks,
                           input_dims, output_dims, 
                           with_checkpoints=True, 
                           weight_int=None, weight_out=None, 
-                          weight_count=None,
-                          invasive=False):
+                          weight_count=None, invasive=False, 
+                          invasive_method="projection"):
     if hasattr(model, "bert") and hasattr(model.bert, "encoder"):
         encoder = model.bert.encoder
     elif hasattr(model, "encoder"):
@@ -23,13 +23,16 @@ def ttm_alt_compress_bert_ffn(model, ranks,
         if weight_int is not None:
             if invasive:
                 ttclass = InvasiveFWTTCompressedLinear
+                tt_weight = ttclass.from_linear(layer.intermediate.dense, 
+                    weight_int[i] / weight_count,
+                    rank=ranks[0], shape=(input_dims, output_dims), method=invasive_method,
+                )
             else:
                 ttclass = FWTTCompressedLinear
-            
-            tt_weight = ttclass.from_linear(layer.intermediate.dense, 
-                weight_int[i] / weight_count,
-                rank=ranks[0], shape=(input_dims, output_dims)
-            )
+                tt_weight = ttclass.from_linear(layer.intermediate.dense, 
+                    weight_int[i] / weight_count,
+                    rank=ranks[0], shape=(input_dims, output_dims)
+                )
         else: 
             tt_weight = TTCompressedLinear.from_linear(layer.intermediate.dense, 
                                                        rank=ranks[0], shape=(input_dims, output_dims))
@@ -41,13 +44,16 @@ def ttm_alt_compress_bert_ffn(model, ranks,
         if weight_out is not None:
             if invasive:
                 ttclass = InvasiveFWTTCompressedLinear
+                tt_weight = ttclass.from_linear(layer.output.dense, 
+                    weight_out[i] / weight_count,
+                    rank=ranks[0], shape=(output_dims, input_dims), method=invasive_method
+                )
             else:
                 ttclass = FWTTCompressedLinear
-            
-            tt_weight = ttclass.from_linear(layer.output.dense, 
-                weight_out[i] / weight_count,
-                rank=ranks[0], shape=(output_dims, input_dims)
-            )
+                tt_weight = ttclass.from_linear(layer.output.dense, 
+                    weight_out[i] / weight_count,
+                    rank=ranks[0], shape=(output_dims, input_dims)
+                )
         else: 
             tt_weight = TTCompressedLinear.from_linear(layer.output.dense, 
                                                        rank=ranks[0], shape=(output_dims, input_dims))

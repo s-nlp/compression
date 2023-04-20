@@ -474,7 +474,7 @@ class InvasiveFWTTCompressedLinear(CompressedLinear):
 
     @classmethod
     def from_linear(cls, linear: T.nn.Linear, fisher_information: T.Tensor,
-                    shape: Tuple[Tuple[int], Tuple[int]], rank: int, **kwargs):
+                    shape: Tuple[Tuple[int], Tuple[int]], rank: int, method: str = "projection", **kwargs):
         ndim = len(shape[0])
 
         # Prepare information about shape and rank of TT (not TTM).
@@ -499,7 +499,12 @@ class InvasiveFWTTCompressedLinear(CompressedLinear):
         # Reshape TT-matrix to a plain TT and apply decomposition.
         tensor = tensor.reshape(tt_shape)
         fisher_information = fisher_information.reshape(tt_shape)
-        cores = weighted_ttd(tensor, fisher_information, tt_rank, **kwargs)
+        if method == "projection":
+            cores = weighted_ttd(tensor, fisher_information, tt_rank, **kwargs)
+        elif method == "truncate":
+            cores = other_weighted_ttd(tensor, fisher_information, tt_rank, **kwargs)
+        else:
+            raise NotImplementedError(f"Unknown weighted TTd method {method}")
 
         # Reshape TT-cores back to TT-matrix cores (TTM-cores).
         core_shapes = zip(tt_rank, *shape, tt_rank[1:])

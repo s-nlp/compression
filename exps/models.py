@@ -32,6 +32,7 @@ MODEL_NAMES = OrderedDict(
         ("ttm_ffn_alt", "apply_alt_ttm_compress_bert_ffn"),
         ("ttm_ffn_alt_w", "apply_alt_ttm_w_compress_bert_ffn"),
         ("ttm_ffn_alt_w_inv", "apply_alt_ttm_w_compress_bert_ffn_inv"),
+        ("ttm_ffn_alt_w_inv_truncate", "apply_alt_ttm_w_compress_bert_ffn_inv"),
         
         ("ttm_ffn_w_inv", "apply_ttm_compress_bert_ffn_w_inv"),
         ("ttm_ffn_w", "apply_ttm_compress_bert_ffn_w"),
@@ -86,10 +87,11 @@ def apply_alt_w_svd_invasive_compress_bert_ffn(model, ranks,
 #weighted invasive TTM from vika source code
 #TODO:not working now, but should?
 def apply_ttm_compress_bert_ffn_w_inv(model, ranks, input_dims, output_dims,
-                                weight_int, weight_out, weight_count):
+        weight_int, weight_out, weight_count, invasive_method="projection"):
     
     model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, False,
-                                weight_int, weight_out, weight_count, invasive=True)
+        weight_int, weight_out, weight_count, invasive=True, invasive_method=invasive_method)
+
     return model
 
 #weighted non-invasive TTM from vika source code
