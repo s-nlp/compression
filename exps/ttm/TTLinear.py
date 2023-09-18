@@ -11,6 +11,8 @@ class WeightedTTLinear(nn.Module):
     def __init__(self, fisher_information: torch.Tensor, *args, **kwargs):
         super().__init__()
         self.fisher_information = torch.sqrt(fisher_information.sum(0))
+        self.alpha = 0.1
+        self.fisher_information += torch.ones_like(self.fisher_information) * self.alpha
         self.ttlinear = TTLinear(*args, **kwargs)
 
     def forward(self, x: torch.Tensor):

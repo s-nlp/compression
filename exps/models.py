@@ -8,8 +8,7 @@ from .ttm.ttm_compress_bert import ttm_compress_bert_ffn
 from .ttm_daniel.ttm_alt_compress_bert import (ttm_alt_compress_bert_ffn, 
                                                svd_alt_compress_bert_ffn,
                                             )
-
-
+#from .greenaimodules.layers_ttm import ttm_greenai_ffn
 from collections import OrderedDict
 MODEL_NAMES = OrderedDict(
     [
@@ -26,12 +25,16 @@ MODEL_NAMES = OrderedDict(
         ("ttm_ffn", "apply_ttm_compress_bert_ffn"),
         ("ttm_ffn_alt", "apply_alt_ttm_compress_bert_ffn"),
         ("ttm_ffn_alt_w", "apply_alt_ttm_w_compress_bert_ffn"),
-        
+        ("ttm_ffn_alt_w_inv_truncate", "apply_alt_ttm_w_compress_bert_ffn_inv"),
+
         ("ttm_ffn_w_inv", "apply_ttm_compress_bert_ffn_w_inv"),
         ("ttm_ffn_w", "apply_ttm_compress_bert_ffn_w"),
         
+        #("ttm_greenai", "apply_ttm_greenai"),
+
         ("svd_ffn_alt", "apply_alt_svd_compress_bert_ffn"),
         ("svd_ffn_alt_w", "apply_alt_w_svd_invasive_compress_bert_ffn"),
+
     ])
 
 #dummy model
@@ -43,6 +46,8 @@ def dummy_self(model, *args, **kwargs):
 def apply_ttm_compress_bert_ffn(model, ranks, input_dims, output_dims):
     model = ttm_compress_bert_ffn(model, ranks, input_dims, output_dims, 
                                   with_checkpoints=False)
+    #model = ttm_greenai_ffn(model, ranks, input_dims, output_dims)
+
     return model
 
 #simple TTM from daniel source code
@@ -55,6 +60,13 @@ def apply_alt_ttm_w_compress_bert_ffn(model, ranks, input_dims, output_dims,
                                 weight_int, weight_out, weight_count):
     model = ttm_alt_compress_bert_ffn(model, ranks, input_dims, output_dims, False,
                                 weight_int, weight_out, weight_count, invasive=False)
+    return model
+
+#TTM weight invasive from daniel source code
+def apply_alt_ttm_w_compress_bert_ffn_inv(model, ranks, input_dims, output_dims, 
+                                weight_int, weight_out, weight_count):
+    model = ttm_alt_compress_bert_ffn(model, ranks, input_dims, output_dims, False,
+                                weight_int, weight_out, weight_count, invasive=True)
     return model
 
 #simple svd from daniel source code
@@ -86,11 +98,11 @@ def apply_ttm_compress_bert_ffn_w(model, ranks, input_dims, output_dims,
                                 weight_int, weight_out, weight_count, invasive=False)
     return model
 
-def structured_pruning(model):
+def structured_pruning(model, *args, **kwargs):
     model = str_prune(model, 0.6)
     return model
 
-def unstructured_pruning(model):
+def unstructured_pruning(model, *args, **kwargs):
     model = uns_prune(model, 0.6)
     return model
 

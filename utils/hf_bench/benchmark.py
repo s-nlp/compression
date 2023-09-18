@@ -111,8 +111,11 @@ class PyTorchBenchmark(Benchmark):
                     #def_class = MODEL_WITH_LM_HEAD_MAPPING[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
                     model_def = getattr(class_module, def_class)
-                    if self.args.exp_name == "ttm_ffn":
-                        model = model_def(model_cls(config), self.args.tt_ranks, self.args.tt_input_dims, self.args.tt_output_dims)
+                    if self.args.exp_name in ["ttm_ffn", "ttm_ffn_alt"]:
+                        model = model_def(model_cls(config), 
+                                          self.args.tt_ranks, 
+                                          self.args.tt_input_dims, 
+                                          self.args.tt_output_dims)
                     else:
                         model = model_def(model_cls(config), self.args.rank)
                     #model = model_def(model)
@@ -180,9 +183,18 @@ class PyTorchBenchmark(Benchmark):
                 if not self.args.exp_name in ['none', None]:
                     def_class = MODEL_NAMES[self.args.exp_name]
                     class_module = __import__("exps.models", fromlist=[def_class])
+                    
                     model_def = getattr(class_module, def_class)
-                    model = model_def(model_cls(config), int(self.args.rank))
+                    if self.args.exp_name in ["ttm_ffn", "ttm_ffn_alt"]:
+                        model = model_def(model_cls(config), 
+                                          self.args.tt_ranks, 
+                                          self.args.tt_input_dims, 
+                                          self.args.tt_output_dims)
+                    else:
+                        model = model_def(model_cls(config), self.args.rank)
                     #model = model_def(model)
+
+                    
                 else:
                     model = MODEL_WITH_LM_HEAD_MAPPING[config.__class__](config)
                     #model = model_cls(config)

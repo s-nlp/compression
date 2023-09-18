@@ -110,18 +110,18 @@ Due to the specifics of gpus, the benchmark should only be performed on immutabl
 
 ## Experiments
 
-exps folder contains various model compression experiments:
+exps folder contains various model compression experiments using ```--comp_func``` :
 
-1. head pruning, based on [16vs1head paper](https://github.com/huggingface/transformers/tree/main/examples/research_projects/bertology)
+1. head pruning, based on [16vs1head paper](https://github.com/huggingface/transformers/tree/main/examples/research_projects/bertology) ```random_head```
 
-2. Standart SVD
+2. Standart SVD ```our_ffn```
+3. Weighted SVD ```svd_ffn_w_T or svd_ffn_w```
+4. TTM ```ttm_ffn```
 
-3. Weighted SVD
-
-4. TTM
+Additional models can be found in ./exps/models.py
 
 ## to-do
 
-1. SuperGlue, RussianSuperGlue, BigBench
+1. RussianSuperGlue, BigBench
 2. Better initialization
 3. Best-of-5 evaluation

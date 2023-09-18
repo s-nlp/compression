@@ -5,7 +5,7 @@
 import torch
 import tntorch as tn
 from typing import Any, Optional, List, Sequence, Union
-from ttensor_fisher import CustomTensor
+from .ttensor_fisher import CustomTensor
 
 
 class TTMatrix:

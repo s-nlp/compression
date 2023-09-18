@@ -4,38 +4,29 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-STSB = 'stsb' 
-COLA = 'cola' 
-MNLI = 'mnli' 
-MRPC = 'mrpc' 
-QNLI = 'qnli' 
-QQP = 'qqp' 
-RTE = 'rte' 
-SST2 ='sst2' 
-WNLI ='wnli'
+TASKS_GLUE = [
+    'stsb',
+    'cola',
+    'mnli',
+    'mrpc',
+    'qnli',
+    'qqp',
+    'rte',
+    'sst2',
+    'wnli',
+    ]
 
-TASKS = [
-    STSB,
-    COLA,
-    MNLI,
-    MRPC,
-    QNLI,
-    QQP,
-    RTE,
-    SST2,
-    WNLI,
-]
-TASK_TITLES = {
-    STSB: 'STSB',
-    COLA: 'COLA',
-    MNLI: 'MNLI',
-    MRPC: 'MRPC',
-    QNLI: 'QNLI',
-    QQP: 'QQP',
-    RTE: 'RTE',
-    SST2: 'SST2',
-    WNLI: 'WNLI',
-}
+TASKS_SUPERGLUE = [
+    'copa',
+    'multirc',
+    'rte',
+    'boolq',
+    'cb',
+    'wic',
+    'wsc',
+    'record'
+    ]
+
 
 @dataclass
 class Score:
@@ -43,16 +34,24 @@ class Score:
     second: float = None
 
 TASK_METRICS = {
-    STSB: 'eval_pearson',
-    COLA: 'eval_matthews_correlation',
-    MNLI: 'eval_accuracy',
-    MRPC: ('eval_f1','eval_accuracy'),
-    QNLI: 'eval_accuracy',
-    QQP: ('eval_f1','eval_accuracy'),
-    RTE: 'eval_accuracy',
-    SST2: 'eval_accuracy',
-    WNLI: 'eval_accuracy',
-}
+    'stsb': 'eval_pearson',
+    'cola': 'eval_matthews_correlation',
+    'mnli': 'eval_accuracy',
+    'mrpc': ('eval_f1','eval_accuracy'),
+    'qnli': 'eval_accuracy',
+    'qqp': ('eval_f1','eval_accuracy'),
+    'rte': 'eval_accuracy',
+    'sst2': 'eval_accuracy',
+    'wnli': 'eval_accuracy',
+
+    'copa': 'eval_accuracy',
+    'multirc': 'eval_accuracy',
+    'boolq': 'eval_accuracy',
+    'cb': 'eval_accuracy',
+    'wic': 'eval_accuracy',
+    'wsc': 'eval_accuracy',
+    'record': 'eval_accuracy',
+    }
 
 from os.path import (
     join,
@@ -78,14 +77,16 @@ def metrics_score(task, metrics):
         second = None
     return Score(first, second)
 
-def OverallTable(path_to, file_to):
+def OverallTable(path_to, file_to, bench_name):
+    if bench_name == 'glue':
+        TASKS = TASKS_GLUE
+    else:
+        TASKS = TASKS_SUPERGLUE
+
     jiant_task_scores = []
-    #JSON = r'eval_results.json'
-    #JSON = r'eval_results_'
-    #JIANT_EVAL_DIR = r'/content/data/'
-    #MODELS = ['bert_uncased_pruned_1','bert_uncased_1','bert_base']
+
     MODELS = os.listdir(path_to)
-    #MODELS = ['bert_base_1','robert_base_1']
+
     for model in MODELS:
         csv_iter = "inference_memory.csv"
         path_csv = join(path_to, model, csv_iter)
@@ -119,6 +120,12 @@ def OverallTable(path_to, file_to):
                 size_of = data['size_of'] / 1024 /1024
             except:
                 size_of = 0
+
+            try:
+                param_of = data['param_of']
+            except:
+                param_of = 0
+
             used_cpu = data_inf['used_cpu']
             used_cpumem = data_inf['used_cpumem']
             used_gpu = data_inf['used_gpu']
@@ -128,16 +135,15 @@ def OverallTable(path_to, file_to):
             t_inf = data_inf_t['result']
 
         
-            jiant_task_scores.append([model, task, json_iter, score.first, size_of, speed, t_train, t_inf,
+            jiant_task_scores.append([model, task, json_iter, score.first, size_of, param_of, t_train, t_inf,
                 used_cpu, used_cpumem, used_gpu, used_gpumem])
 
     table = pd.DataFrame(jiant_task_scores, columns=['model', 'task', 'json_iter', 'score',
-                'size(MB)','SPS', 'train speed', 'inf speed', 'used_cpu', 'used_cpu_mem', 'used_gpu', 'used_gpu_mem'])
-    #print(table)
-    #print(table.drop(['json_iter'], axis=1).groupby(['model','task']).agg(np.mean))
+                'size(MB)','size(param)', 'train speed', 'inf speed', 'used_cpu', 'used_cpu_mem', 'used_gpu', 'used_gpu_mem'])
+
     table_new = table.drop(['json_iter'], axis=1).groupby(['model','task']).agg(np.mean).reset_index()
     left_table = table_new.pivot(index='model', columns='task', values='score').copy()
-    #print(left_table)
+
     left_table.columns.name = None
     left_table.index.name = None
     left_table = left_table.reindex(index=MODELS, columns=TASKS)
@@ -149,9 +155,10 @@ def OverallTable(path_to, file_to):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file",default="results.csv", help="write report to FILE")
-    parser.add_argument("--path",help="don't print status messages to hfgstdout")
+    parser.add_argument("--path",help="path to generated GLUE folder")
+    parser.add_argument("--output",default="results.csv", help="write report to file")
+    parser.add_argument("--dataset_name",default="glue", help="GLUE or SuperGLUE")
     args = parser.parse_args(sys.argv[1:])
-    print(args.file)
+    print(args.output)
     print(args.path)
-    OverallTable(args.path, args.file)
+    OverallTable(args.path, args.output, args.dataset_name)

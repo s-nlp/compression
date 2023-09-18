@@ -113,6 +113,34 @@ class CustomTrainerBert(Trainer):
         self.avg_counter+=1
         return loss.detach()
 
+
+class CustomTrainerDistillBert(Trainer):
+    def make_grad_bank(self, model):
+        self.grad_bank_out_epoch = []
+        self.grad_bank_int_epoch = []
+        #self.grad_bank_out = {i:torch.zeros((model.config.hidden_dim, model.config.dim )) for i in range(model.config.n_layers)}
+        #self.grad_bank_int = {i:torch.zeros((model.config.dim, model.config.hidden_dim )) for i in range(model.config.n_layers)}
+        self.grad_bank_out_2 = {i:torch.zeros((model.config.hidden_dim, model.config.dim )) for i in range(model.config.n_layers)}
+        self.grad_bank_int_2 = {i:torch.zeros((model.config.dim, model.config.hidden_dim )) for i in range(model.config.n_layers)}
+        self.avg_counter = 0
+    def training_step(self, model, inputs):
+        model.train()
+        inputs = self._prepare_inputs(inputs)
+        with self.compute_loss_context_manager():
+            loss = self.compute_loss(model, inputs)
+        loss.backward()
+
+        for layer in range(model.config.n_layers):
+
+            #self.grad_bank_out[layer] += model.distilbert.transformer.layer[layer].ffn.lin1.weight.grad.detach().cpu() #(model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() **2).sum(0)
+            #self.grad_bank_int[layer] += model.distilbert.transformer.layer[layer].ffn.lin2.weight.grad.detach().cpu() #(model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() **2).sum(0)
+        
+            self.grad_bank_out_2[layer] += model.distilbert.transformer.layer[layer].ffn.lin1.weight.grad.detach().cpu()**2 #(model.bert.encoder.layer[layer].intermediate.dense.weight.grad.detach().cpu() **2).sum(0)
+            self.grad_bank_int_2[layer] += model.distilbert.transformer.layer[layer].ffn.lin2.weight.grad.detach().cpu()**2 #(model.bert.encoder.layer[layer].output.dense.weight.grad.detach().cpu() **2).sum(0)
+        self.avg_counter+=1
+        return loss.detach()
+
+
 @dataclass
 class DataTrainingArguments:
     """
@@ -622,7 +650,7 @@ def main(tasks_):
 
 
     else:
-        trainer = Trainer(
+        trainer = CustomTrainerBert(
             model=model,
             args=training_args,
             train_dataset=train_dataset if training_args.do_train else None,
@@ -631,6 +659,7 @@ def main(tasks_):
             tokenizer=tokenizer,
             data_collator=data_collator,
         )
+        trainer.make_grad_bank(model)
     trainer.model.to('cuda')
 
     # Training
@@ -675,7 +704,7 @@ def main(tasks_):
             if model_args.comp_func in ["ttm_ffn", "ttm_ffn_alt"]:
                 trainer.model = model_def(trainer.model, model_args.tt_ranks, 
                                           model_args.tt_input_dims, model_args.tt_output_dims)
-            elif model_args.comp_func in ["ttm_ffn_w_inv","ttm_ffn_w", "ttm_ffn_alt_w"]:
+            elif model_args.comp_func in ["ttm_ffn_w_inv","ttm_ffn_w", "ttm_ffn_alt_w", "ttm_ffn_alt_w_inv_truncate"]:
                 trainer.model = model_def(trainer.model, model_args.tt_ranks, 
                                           model_args.tt_input_dims, model_args.tt_output_dims,
                                           weight_int=trainer.grad_bank_int_2, 
@@ -687,7 +716,7 @@ def main(tasks_):
                                           weight_count=trainer.avg_counter)
                 #trainer.model = model_def(trainer.model, model_args.rank)
             trainer.model.to('cuda')
-
+            print(trainer.model)
         # Loop to handle MNLI double evaluation (matched, mis-matched)
         tasks = [data_args.task_name]
         eval_datasets = [eval_dataset]
@@ -719,6 +748,10 @@ def main(tasks_):
     # BENCHMARKING
     if data_args.do_bench:
         logger.info("*** Benchmarking ***")
+
+        training_args.learning_rate = float(2e-5)
+        training_args.num_train_epochs = 3
+
         if not model_args.comp_func in ['none', None] and model_args.double_train:
             trainer2 = Trainer(
                 model=trainer.model,
@@ -814,8 +847,11 @@ def _mp_fn(index):
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
     #tasks_ = ['cola']#,'stsb', 'mrpc', 'rte', 'wnli']
-    tasks_ = ['stsb', 'cola','mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'] #  ,'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
-    synth_bench()
+    #tasks_ = ['cola'] 
+    tasks_ = ['stsb', 'cola','rte'] 
+    #tasks_ = ['mnli','mrpc','qnli','qqp','sst2']
+    #tasks_ = ['stsb', 'cola','mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'] #  ,'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
+    #synth_bench()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name")
@@ -824,4 +860,4 @@ if __name__ == "__main__":
 
     for task_ in tasks_:
         path_to = main(task_)
-    OverallTable(os.path.join(args_alt.output_dir, args_alt.run_name,'..'), 'results.csv')
+    OverallTable(os.path.join(args_alt.output_dir, args_alt.run_name,'..'), 'results.csv', 'glue')

@@ -14,7 +14,7 @@ class Checkpointed(nn.Sequential):
 
 def ttm_compress_bert_ffn(model, ranks, 
                           input_dims, output_dims, 
-                          with_checkpoints=True, 
+                          with_checkpoints=False, 
                           weight_int=None, weight_out=None, 
                           weight_count=None,
                           invasive=False):
@@ -77,4 +77,106 @@ def ttm_compress_bert_ffn(model, ranks,
 
     return model
 
+
+def ttm_compress_bart_ffn_W(
+    model,
+    ranks,
+    input_dims,
+    output_dims,
+    with_checkpoints=False,
+    weight_int_e=None,
+    weight_out_e=None,
+    weight_int_d=None,
+    weight_out_d=None,
+    weight_count=None,
+    invasive=False,
+    invasive_method="projection"
+):
+    if hasattr(model.model, "encoder") and hasattr(model.model, "decoder"):
+        encoder = model.model.encoder
+        decoder = model.model.decoder
+
+    for part in [encoder]:
+        for i, layer in enumerate(part.layers):
+            token_dim, hidden_dim = layer.fc1.weight.T.shape
+            if weight_int_e is None:
+                tt_weight = TTLinear(token_dim, hidden_dim, ranks, input_dims, output_dims,)
+                tt_weight.set_from_linear(layer.fc1)
+
+            elif not invasive:
+                tt_weight = WeightedTTLinear(weight_int_e[i] / weight_count, 
+                                             token_dim, hidden_dim, ranks, 
+                                             input_dims, output_dims)
+                tt_weight.set_from_linear(layer.fc1)
+            elif invasive:
+                tt_weight = TTLinear(token_dim, hidden_dim, ranks, 
+                                     input_dims, output_dims,)
+                tt_weight.set_from_linear_w(layer.fc1, 
+                                            weight_int_e[i] / weight_count)
+
+            layer.fc1 = tt_weight
+
+            # second linear layerhas reversed dimensions,
+            # so we swap input_dims and output_dims
+
+            token_dim, hidden_dim = layer.fc2.weight.T.shape
+            if weight_out_e is None:
+                tt_weight = TTLinear(token_dim, hidden_dim, ranks, output_dims, input_dims,)
+                tt_weight.set_from_linear(layer.fc2)
+
+            elif not invasive:
+                tt_weight = WeightedTTLinear(weight_out_e[i] / weight_count, 
+                                             token_dim, hidden_dim, ranks, 
+                                              output_dims, input_dims,)
+                tt_weight.set_from_linear(layer.fc2)
+            elif invasive:
+                tt_weight = TTLinear(token_dim, hidden_dim, ranks, 
+                                      output_dims, input_dims,)
+                tt_weight.set_from_linear_w(layer.fc2, 
+                                            weight_out_e[i] / weight_count)
+
+            layer.fc2 = tt_weight
+
+    for part in [decoder]:
+        for i, layer in enumerate(part.layers):
+            token_dim, hidden_dim = layer.fc1.weight.T.shape
+            if weight_int_d is None:
+                tt_weight = TTLinear(token_dim, hidden_dim, ranks, input_dims, output_dims,)
+                tt_weight.set_from_linear(layer.fc1)
+
+            elif not invasive:
+                tt_weight = WeightedTTLinear(weight_int_d[i] / weight_count, 
+                                             token_dim, hidden_dim, ranks, 
+                                             input_dims, output_dims)
+                tt_weight.set_from_linear(layer.fc1)
+            elif invasive:
+                tt_weight = TTLinear(token_dim, hidden_dim, ranks, 
+                                     input_dims, output_dims,)
+                tt_weight.set_from_linear_w(layer.fc1, 
+                                            weight_int_d[i] / weight_count)
+
+            layer.fc1 = tt_weight
+
+            # second linear layerhas reversed dimensions,
+            # so we swap input_dims and output_dims
+
+            token_dim, hidden_dim = layer.fc2.weight.T.shape
+            if weight_out_e is None:
+                tt_weight = TTLinear(token_dim, hidden_dim, ranks, output_dims, input_dims,)
+                tt_weight.set_from_linear(layer.fc2)
+
+            elif not invasive:
+                tt_weight = WeightedTTLinear(weight_out_d[i] / weight_count, 
+                                             token_dim, hidden_dim, ranks, 
+                                              output_dims, input_dims,)
+                tt_weight.set_from_linear(layer.fc2)
+            elif invasive:
+                tt_weight = TTLinear(token_dim, hidden_dim, ranks, 
+                                      output_dims, input_dims,)
+                tt_weight.set_from_linear_w(layer.fc2, 
+                                            weight_out_d[i] / weight_count)
+
+            layer.fc2 = tt_weight
+
+    return model
 
