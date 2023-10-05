@@ -1,23 +1,24 @@
-# compression
-Project on transformers compression
+# A Computational Study of Matrix Decomposition Methods for Compression of Pre-trained Transformers
+This repository presents a comparative study of low-rank matrix and tensor factorization techniques for compressing Transformer-based models. Specifically, we apply Singular Value Decomposition(SVD) and Tensor Train Matrix(TTM) decomposition to represent the fully connected layers in a compressed form. We extend the FWSVD approach by adding Fisher information to the TTM decomposition and present a novel method called FWTTM.
 
 
 ## Quick Start
 
-This benchmark is mostly based on the following code [HF-run_glue.py](https://github.com/huggingface/transformers/blob/main/examples/pytorch/text-classification/run_glue.py). So most of args should work for this script too. 
+This benchmark is mostly based on the following code [huggingface run_glue.py](https://github.com/huggingface/transformers/blob/main/examples/pytorch/text-classification/run_glue.py). So most of args should work for this script too. 
 
 Benchmark based on GLUE which is made up of a total of 9 different tasks. Here is how to run the script:
 
 ```bash
 model = "bert-base-uncased"
 random = 814084
-python bench_glue_AIO.py \
+python glue_trainer.py \
 				--model_name_or_path $model  \
 				--run_name $model-full-$random \
 				--comp_func 'none'
 				--save_strategy "epoch" \
 				--logging_strategy no \
-				--do_bench --bench_on_eval --bench_on_train \
+				--do_bench --bench_on_eval \
+				--bench_on_train \
 				--max_bench_iter 1 \
 				--batch_sizes 1 16 32 \
 				--sequence_lengths 128 \
@@ -44,11 +45,12 @@ do
 		do
 			CUDA_VISIBLE_DEVICES=0 python glue_trainer.py \
 				--model_name_or_path $model  \
-				--run_name $model-svd_ffn_w_T-$ranks-$random \
+				--run_name $model-TTM-$ranks-$random \
 				--comp_func 'ttm_ffn' --rank $ranks \
 				--save_strategy "no" \
 				--logging_strategy "no" \
-				--do_bench --bench_on_eval --bench_on_train \
+				--do_bench --bench_on_eval \
+				--bench_on_train \
 				--max_bench_iter 1 \
 				--batch_sizes 1 16 32 \
 				--sequence_lengths 128 \
@@ -62,7 +64,7 @@ do
 				--num_train_epochs 2 \
 				--evaluation_strategy 'epoch' \
 				--seed $random \
-				--output_dir './bert-base-uncased-ttm_ffn/' \
+				--output_dir './bert-base-uncased-ttm_ffn/'\
 				--do_train --do_eval \
 				--overwrite_output_dir
 		done
@@ -95,7 +97,8 @@ synthetic_benchmark.py \
 				--model_name_or_path 'gpt2'  \
 				--run_name 'gpt2-full' \
 				--comp_func 'none' \
-				--do_bench --bench_on_eval --bench_on_train \
+				--do_bench --bench_on_eval \
+				--bench_on_train \
 				--max_bench_iter 1 \
 				--batch_sizes 1 16 32 \
 				--sequence_lengths 128 \
@@ -115,13 +118,9 @@ exps folder contains various model compression experiments using ```--comp_func`
 1. head pruning, based on [16vs1head paper](https://github.com/huggingface/transformers/tree/main/examples/research_projects/bertology) ```random_head```
 
 2. Standart SVD ```our_ffn```
-3. Weighted SVD ```svd_ffn_w_T or svd_ffn_w```
+3. Weighted SVD ```svd_ffn_w_T``` or ```svd_ffn_w```
 4. TTM ```ttm_ffn```
+5. FWTTM ```ttm_ffn_w```
 
 Additional models can be found in ./exps/models.py
 
-## to-do
-
-1. RussianSuperGlue, BigBench
-2. Better initialization
-3. Best-of-5 evaluation
