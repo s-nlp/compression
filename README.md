@@ -6,8 +6,16 @@ In this paper we studied different matrix decompositions to compress Fully-Conne
 
 ## Quick Start
 
+Code was tested on Python 3.10. To install needed dependencies, run:
+
 ```bash
 pip install -r requirements.txt
+```
+
+Also, you might want to use logging:
+
+```bash
+pip install wandb
 ```
 
 ### Running on GLUE benchmark. 
@@ -181,18 +189,19 @@ Data folder contains evaluation results for gpt2/bert-base-cased/distilbert/prun
 
 All the discussed in paper compression methods are located in the `exps` folder and can be applied in the main GLUE evaluation script using `--comp_func` flag :
 
-1. Attnetion head pruning, based on the paper ["Are Sixteen Heads Really Better than One?"](https://arxiv.org/abs/1905.10650) and its [implementation](https://github.com/huggingface/transformers/tree/main/examples/research_projects/bertology) ```random_head```
-2. Vanilla SVD ```our_ffn```
-3. Fisher-Weighted SVD introduced in ["Language model compression with weighted low-rank factorization"](https://arxiv.org/abs/2207.00112)  ```svd_ffn_w_T``` or ```svd_ffn_w```
-4. TTM () ```ttm_ffn```
-5. FWTTM ```ttm_ffn_w```
+1. Attnetion head pruning, based on the paper ["Are Sixteen Heads Really Better than One?"](https://arxiv.org/abs/1905.10650) and its [implementation](https://github.com/huggingface/transformers/tree/main/examples/research_projects/bertology) ```random_head```.
+2. Vanilla SVD ```our_ffn```.
+3. Fisher-Weighted SVD introduced in ["Language model compression with weighted low-rank factorization"](https://arxiv.org/abs/2207.00112)  ```svd_ffn_w_T``` or ```svd_ffn_w```.
+4. TTM (we use our own implementation) ```ttm_ffn```.
+5. FWTTM (our proposed method) ```ttm_ffn_w```.
 
 For sequence-to-sequence models:
 
-1. Standart SVD ```svd_ffn_bart```
-2. Weighted SVD ```svd_ffn_w_bart```
-3. TTM ```ttm_ffn_bart```
-4. FWTTM ```ttm_ffn_w_bart```
+1. Standart SVD ```svd_ffn_bart```.
+2. Weighted SVD ```svd_ffn_w_bart```.
+3. TTM ```ttm_ffn_bart```.
+4. FWTTM ```ttm_ffn_w_bart```.
+
 
 Additional methods can be found in `exps/models.py` and `exps/models_bart.py`.
 
@@ -204,4 +213,15 @@ Due to the specifics of GPUs, drivers and architectures the benchmark should onl
 
 Below we present the results from our paper:
 
+
+### Single Train GLUE
 ![Alt text](figs/bert_ST_glue.png)
+
+
+### Double Train GLUE
+![Alt text](figs/bert_DT_glue.png)
+
+
+## Citation
+
+TODO.
