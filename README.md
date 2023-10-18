@@ -1,11 +1,19 @@
-# A Computational Study of Matrix Decomposition Methods for Compression of Pre-trained Transformers
-This repository presents a comparative study of low-rank matrix and tensor factorization techniques for compressing Transformer-based models. Specifically, we apply Singular Value Decomposition(SVD) and Tensor Train Matrix(TTM) decomposition to represent the fully connected layers in a compressed form. We extend the FWSVD approach by adding Fisher information to the TTM decomposition and present a novel method called FWTTM.
+# Introduction
+
+This repository contains code for reproducing experiments from the PACLIC-2023 paper **A Computational Study of Matrix Decomposition Methods for Compression of Pre-trained Transformer**.
+In this paper we studied different matrix decompositions to compress Fully-Connected layers of a Transformer models (BERT and BART). Specifically, we apply Singular Value Decomposition(SVD) and Tensor Train Matrix(TTM) decomposition to represent the fully connected layers in a compressed form. We extend the FWSVD approach by adding Fisher information to the TTM decomposition and present a novel method called FWTTM.
 
 
 ## Quick Start
-### GLUE
-This benchmark is mostly based on the following code [huggingface run_glue.py](https://github.com/huggingface/transformers/blob/main/examples/pytorch/text-classification/run_glue.py). So most of args should work for this script too. 
-Benchmark based on GLUE which is made up of a total of 9 different tasks. Here is how to run the script:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Running on GLUE benchmark. 
+Our code is based on the HuggingFace [code](https://github.com/huggingface/transformers/blob/main/examples/pytorch/text-classification/run_glue.py) for GLUE. So most of args should work for this script too. 
+Benchmark based on GLUE which is made up of a total of $9$ different tasks. Here is how to run the script:
+
 ```bash
 model = "bert-base-uncased"
 random = 814084
@@ -29,7 +37,8 @@ python glue_trainer.py \
     --seed $random \
     --output_dir ./data_eval/ \
     --overwrite_output_dir \
-    --do_train --do_eval 
+    --do_train \ 
+    --do_eval 
 ```
 This script will train and eval bert-base model for GLUE, and then output the results with GPU and CPU utilization.
 To train model with compression function you can change script to:
@@ -63,19 +72,21 @@ do
 				--evaluation_strategy 'epoch' \
 				--seed $random \
 				--output_dir './bert-base-uncased-ttm_ffn/'\
-				--do_train --double_train --do_eval \
+				--do_train \
+                --double_train \ 
+                --do_eval \
 				--overwrite_output_dir
 		done
 	done
 done
 ```
-Where __svd_ffn_w__ is SVD (all models available at /exps/models.py) and __rank__ is SVD rank. __double_train__ is the function for additional training after svd compression, in some cases gives better results.
+Here `svd_ffn_w` is SVD (all models available at `exps/models.py`) and `__rank__` is SVD rank. `--double_train` is the function for additional training after svd compression, in some cases gives better results.
 
-| model                  | score    | size(MB) | size(M param) | SPS       | train speed | inf speed | used_cpu | used_cpu_mem | used_gpu | used_gpu_mem |
-|------------------------|----------|----------|---------------|-----------|-------------|-----------|----------|--------------|----------|--------------|
-| bert | 0.79508  | 417.6553 | 109.483778    | 513.44118 | 0.21948     | 0.078     | 35.40032 | 2644.8       | 44.9     | 1599         |
-| **stsb**               | **cola** | **mnli** | **mrpc**      | **qnli**  | **qqp**     | **rte**   | **sst2** | **wnli**     |          |              |
-| 0.88816                | 0.57574  | 0.84928  | 0.90352       | 0.91338   | 0.87682     | 0.67508   | 0.92432  | 0.5493       |          |              |
+| model    | score    | size(MB) | size(M param) | SPS       | train speed | inf speed | used_cpu | used_cpu_mem | used_gpu | used_gpu_mem |
+| -------- | -------- | -------- | ------------- | --------- | ----------- | --------- | -------- | ------------ | -------- | ------------ |
+| bert     | 0.79508  | 417.6553 | 109.483778    | 513.44118 | 0.21948     | 0.078     | 35.40032 | 2644.8       | 44.9     | 1599         |
+| **stsb** | **cola** | **mnli** | **mrpc**      | **qnli**  | **qqp**     | **rte**   | **sst2** | **wnli**     |          |              |
+| 0.88816  | 0.57574  | 0.84928  | 0.90352       | 0.91338   | 0.87682     | 0.67508   | 0.92432  | 0.5493       |          |              |
 
 ### XSUM\DETOX
 
@@ -147,7 +158,7 @@ for ranks in 10 60 110
 
 For evaluate gpu/cpu metrics we use pynvml library. Model only evaluate during evalatuation process.
 
-You can also get scores without training model by directly using __synthetic_benchmark.py__ script.
+You can also get scores without training model by directly using `synthetic_benchmark.py` script.
 
 ```bash
 python synthetic_benchmark.py \
@@ -168,24 +179,29 @@ Data folder contains evaluation results for gpt2/bert-base-cased/distilbert/prun
 
 ## Experiments
 
-**exps** folder contains various model compression experiments using ```--comp_func``` :
+All the discussed in paper compression methods are located in the `exps` folder and can be applied in the main GLUE evaluation script using `--comp_func` flag :
 
-1. head pruning, based on [16vs1head paper](https://github.com/huggingface/transformers/tree/main/examples/research_projects/bertology) ```random_head```
-2. Standart SVD ```our_ffn```
-3. Weighted SVD ```svd_ffn_w_T``` or ```svd_ffn_w```
-4. TTM ```ttm_ffn```
+1. Attnetion head pruning, based on the paper ["Are Sixteen Heads Really Better than One?"](https://arxiv.org/abs/1905.10650) and its [implementation](https://github.com/huggingface/transformers/tree/main/examples/research_projects/bertology) ```random_head```
+2. Vanilla SVD ```our_ffn```
+3. Fisher-Weighted SVD introduced in ["Language model compression with weighted low-rank factorization"](https://arxiv.org/abs/2207.00112)  ```svd_ffn_w_T``` or ```svd_ffn_w```
+4. TTM () ```ttm_ffn```
 5. FWTTM ```ttm_ffn_w```
 
-For seq2seq models:
+For sequence-to-sequence models:
 
 1. Standart SVD ```svd_ffn_bart```
 2. Weighted SVD ```svd_ffn_w_bart```
 3. TTM ```ttm_ffn_bart```
 4. FWTTM ```ttm_ffn_w_bart```
 
-Additional methods can be found in ./exps/models.py and ./exps/models_bart.py
+Additional methods can be found in `exps/models.py` and `exps/models_bart.py`.
 
-## Repeatability of experiments
-Due to the specifics of gpus, drivers and architectures the benchmark should only be performed on immutable environment. The same script running on different gpus will give different results. So, the quality and speed of compression can be compared only within one environment. The environment setup for the experiments in the paper is available in /data_eval/env_info.csv
+## On the reproducibility of paper results
+Due to the specifics of GPUs, drivers and architectures the benchmark should only be performed on immutable environment. The same script running on different gpus will give different results. So, the quality and speed of compression can be compared only within one environment. The environment setup for the experiments in the paper is available in `/data_eval/env_info.csv`.
 
 
+## Results 
+
+Below we present the results from our paper:
+
+![Alt text](figs/bert_ST_glue.png)
