@@ -54,38 +54,38 @@ To train model with compression function you can change script to:
 ```bash
 for model in "bert-base-uncased"
 do
-	for ranks in 10 60 110 
-	do
-		for random in 39512 
-		do
-			python glue_trainer.py \
-				--model_name_or_path $model  \
-				--run_name $model-TTM-$ranks-$random \
-				--comp_func 'ttm_ffn' --rank $ranks \
-				--save_strategy "no" \
-				--logging_strategy "no" \
-				--do_bench --bench_on_eval \
-				--bench_on_train \
-				--max_bench_iter 1 \
-				--batch_sizes 1 16 32 \
-				--sequence_lengths 128 \
-				--max_seq_length 128 \
-				--per_device_train_batch_size 32 \
-				--per_device_eval_batch_size 128 \
-				--learning_rate 5e-5 \
-				--tt_ranks $ranks $ranks $ranks \
-				--tt_input_dims 12 2 2 16 \
-				--tt_output_dims 32 3 2 16 \
-				--num_train_epochs 2 \
-				--evaluation_strategy 'epoch' \
-				--seed $random \
-				--output_dir './bert-base-uncased-ttm_ffn/'\
-				--do_train \
-                --double_train \ 
-                --do_eval \
-				--overwrite_output_dir
-		done
-	done
+    for ranks in 10 60 110 
+    do
+        for random in 39512 
+        do
+            python glue_trainer.py \
+            --model_name_or_path $model  \
+            --run_name $model-TTM-$ranks-$random \
+            --comp_func 'ttm_ffn' --rank $ranks \
+            --save_strategy "no" \
+            --logging_strategy "no" \
+            --do_bench --bench_on_eval \
+            --bench_on_train \
+            --max_bench_iter 1 \
+            --batch_sizes 1 16 32 \
+            --sequence_lengths 128 \
+            --max_seq_length 128 \
+            --per_device_train_batch_size 32 \
+            --per_device_eval_batch_size 128 \
+            --learning_rate 5e-5 \
+            --tt_ranks $ranks $ranks $ranks \
+            --tt_input_dims 12 2 2 16 \
+            --tt_output_dims 32 3 2 16 \
+            --num_train_epochs 2 \
+            --evaluation_strategy 'epoch' \
+            --seed $random \
+            --output_dir './bert-base-uncased-ttm_ffn/'\
+            --do_train \
+            --double_train \ 
+            --do_eval \
+            --overwrite_output_dir
+        done
+    done
 done
 ```
 Here `svd_ffn_w` is SVD (all models available at `exps/models.py`) and `__rank__` is SVD rank. `--double_train` is the function for additional training after svd compression, in some cases gives better results.
@@ -197,8 +197,8 @@ All the discussed in paper compression methods are located in the `exps` folder 
 
 For sequence-to-sequence models:
 
-1. Standart SVD ```svd_ffn_bart```.
-2. Weighted SVD ```svd_ffn_w_bart```.
+1. Vanilla SVD ```svd_ffn_bart```.
+2. Fisher-Weighted SVD ```svd_ffn_w_bart```.
 3. TTM ```ttm_ffn_bart```.
 4. FWTTM ```ttm_ffn_w_bart```.
 
