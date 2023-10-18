@@ -141,7 +141,7 @@ def OverallTable(path_to, file_to, bench_name):
     table = pd.DataFrame(jiant_task_scores, columns=['model', 'task', 'json_iter', 'score',
                 'size(MB)','size(param)', 'train speed', 'inf speed', 'used_cpu', 'used_cpu_mem', 'used_gpu', 'used_gpu_mem'])
 
-    table_new = table.drop(['json_iter'], axis=1).groupby(['model','task']).agg(np.mean).reset_index()
+    table_new = table.drop(['json_iter'], axis=1).groupby(['model','task']).agg('mean').reset_index()
     left_table = table_new.pivot(index='model', columns='task', values='score').copy()
 
     left_table.columns.name = None

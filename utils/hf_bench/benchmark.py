@@ -312,7 +312,6 @@ class PyTorchBenchmark(Benchmark):
                     stat_monitor.stop_monitor()
                     memory = stat_monitor.stats
 
-
                     #working with colab
                     nvml.nvmlInit()
                     if memory[3] == 0:

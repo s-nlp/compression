@@ -12,3 +12,6 @@ py3nvml
 tensorly
 tntorch
 tasksource
+opt_einsum
+rouge_score
+nltk

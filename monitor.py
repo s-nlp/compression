@@ -82,11 +82,14 @@ class Monitor(object):
 
             if not used_gpu:
                 util = pynvml.nvmlDeviceGetUtilizationRates(self.gpu)
-                used_gpu = util.gpu / len(gpu_processes) # Approximate based on number of processes
-                for proc in gpu_processes:
-                    #print(proc.pid,' == ',self.pid)
-                    if proc.pid == self.pid:
-                        used_gpumem = proc.usedGpuMemory / 1024 / 1024
+                try:
+                    used_gpu = util.gpu / len(gpu_processes) # Approximate based on number of processes
+                    for proc in gpu_processes:
+                        if proc.pid == self.pid:
+                            used_gpumem = proc.usedGpuMemory / 1024 / 1024
+                except:
+                    #nvmlDeviceGetUtilization is wrong
+                    used_gpu, used_gpumem = -1, -1
 
             current_sample.append((used_cpu, used_cpumem, used_gpu, used_gpumem))
 

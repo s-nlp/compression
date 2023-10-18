@@ -846,12 +846,10 @@ def _mp_fn(index):
 ##BAD MANNERS
 if __name__ == "__main__":
     #torch.multiprocessing.set_start_method('spawn')# good solution !!!!
-    #tasks_ = ['cola']#,'stsb', 'mrpc', 'rte', 'wnli']
-    #tasks_ = ['cola'] 
-    tasks_ = ['stsb', 'cola','rte'] 
-    #tasks_ = ['mnli','mrpc','qnli','qqp','sst2']
+    tasks_ = ['stsb']
+    #tasks_ = ['stsb', 'cola','rte'] 
     #tasks_ = ['stsb', 'cola','mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'] #  ,'mnli', 'mrpc', 'qnli', 'qqp', 'rte', 'sst2', 'wnli'
-    #synth_bench()
+    synth_bench()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name")
