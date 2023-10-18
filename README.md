@@ -111,36 +111,36 @@ done
 Second script is for compression and training a compressed model:
 ```bash
 for ranks in 10 60 110
-	do
-		for random in 585534
-		do
-			python ./xsum_trainer.py \
-			--model_name_or_path ./experiments_BART/BART_XSUM_$random \
-			--tokenizer_name ./experiments_BART/BART_XSUM_$random \
-			--run_name bart-xsum-wttm-dt-$ranks \
-			--dataset_name xsum \
-			--dataset_config "3.0.0" \
+    do
+        for random in 585534
+        do
+            python ./xsum_trainer.py \
+            --model_name_or_path ./experiments_BART/BART_XSUM_$random \
+            --tokenizer_name ./experiments_BART/BART_XSUM_$random \
+            --run_name bart-xsum-wttm-dt-$ranks \
+            --dataset_name xsum \
+            --dataset_config "3.0.0" \
             --do_train \
-			--do_predict \
+            --do_predict \
             --tt_input_dims 8 12 8 \
             --tt_output_dims 12 16 16 \
             --tt_ranks $ranks $ranks \
             --comp_func "ttm_ffn_bart" \
-			--rank $ranks \
+            --rank $ranks \
             --predict_with_generate \
-			--seed $random \
-			--evaluation_strategy "epoch" \
-			--max_source_length 512 \
-			--per_device_train_batch_size 16 \
-			--per_device_eval_batch_size 32 \
-			--learning_rate 3e-5 \
-			--num_train_epochs 3 \
-			--overwrite_output_dir \
-			--save_strategy "no" \
-			--source_prefix "" \
-			--output_dir ./experiments_BART/BART_XSUM_$random/BART_XSUM_dt_ttm_ffn_bart_$ranks_$random
-		done
-	done
+            --seed $random \
+            --evaluation_strategy "epoch" \
+            --max_source_length 512 \
+            --per_device_train_batch_size 16 \
+            --per_device_eval_batch_size 32 \
+            --learning_rate 3e-5 \
+            --num_train_epochs 3 \
+            --overwrite_output_dir \
+            --save_strategy "no" \
+            --source_prefix "" \
+            --output_dir ./experiments_BART/BART_XSUM_$random/BART_XSUM_dt_ttm_ffn_bart_$ranks_$random
+        done
+    done
 ```
 
 ## Details
