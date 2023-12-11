@@ -1,0 +1,13 @@
+{
+    "eval_accuracy": 0.6353790613718412,
+    "eval_loss": 0.6376786828041077,
+    "eval_runtime": 0.4984,
+    "eval_samples": 277,
+    "eval_samples_per_second": 555.823,
+    "eval_steps_per_second": 10.033,
+    "size_of": 182881816,
+    "used_cpu": 4.99,
+    "used_cpumem": 3179,
+    "used_gpu": 45.0,
+    "used_gpumem": 4245.3125
+}
