@@ -223,5 +223,71 @@ Below we present the results from our paper:
 
 
 ## Citation
+```bibtex
+@inproceedings{DBLP:conf/aist/PletenevMCSZP23,
+  author       = {Sergey Pletenev and
+                  Daniil Moskovskiy and
+                  Viktoria Chekalina and
+                  Mikhail Seleznyov and
+                  Sergey Zagoruyko and
+                  Alexander Panchenko},
+  editor       = {Dmitry I. Ignatov and
+                  Michael Yu. Khachay and
+                  Andrey Kutuzov and
+                  Habet Madoyan and
+                  Ilya Makarov and
+                  Irina Nikishina and
+                  Alexander Panchenko and
+                  Maxim Panov and
+                  Panos M. Pardalos and
+                  Andrey V. Savchenko and
+                  Evgenii Tsymbalov and
+                  Elena Tutubalina and
+                  Sergey Zagoruyko},
+  title        = {Transformers Compression: {A} Study of Matrix Decomposition Methods
+                  Using Fisher Information},
+  booktitle    = {Analysis of Images, Social Networks and Texts - 11th International
+                  Conference, {AIST} 2023, Yerevan, Armenia, September 28-30, 2023,
+                  Revised Selected Papers},
+  series       = {Lecture Notes in Computer Science},
+  volume       = {14486},
+  pages        = {36--48},
+  publisher    = {Springer},
+  year         = {2023},
+  url          = {https://doi.org/10.1007/978-3-031-54534-4\_3},
+  doi          = {10.1007/978-3-031-54534-4\_3},
+  timestamp    = {Fri, 29 Mar 2024 23:01:34 +0100},
+  biburl       = {https://dblp.org/rec/conf/aist/PletenevMCSZP23.bib},
+  bibsource    = {dblp computer science bibliography, https://dblp.org}
+}
+```
 
-TODO.
+```bibtex
+@inproceedings{pletenev-etal-2023-computational,
+    title = "A Computational Study of Matrix Decomposition Methods for Compression of Pre-trained Transformers",
+    author = "Pletenev, Sergey  and
+      Chekalina, Viktoriia  and
+      Moskovskiy, Daniil  and
+      Seleznev, Mikhail  and
+      Zagoruyko, Sergey  and
+      Panchenko, Alexander",
+    editor = "Huang, Chu-Ren  and
+      Harada, Yasunari  and
+      Kim, Jong-Bok  and
+      Chen, Si  and
+      Hsu, Yu-Yin  and
+      Chersoni, Emmanuele  and
+      A, Pranav  and
+      Zeng, Winnie Huiheng  and
+      Peng, Bo  and
+      Li, Yuxi  and
+      Li, Junlin",
+    booktitle = "Proceedings of the 37th Pacific Asia Conference on Language, Information and Computation",
+    month = dec,
+    year = "2023",
+    address = "Hong Kong, China",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2023.paclic-1.73",
+    pages = "723--742",
+}
+```
